@@ -480,9 +480,167 @@ def _normalize_member_ids(raw_member_ids, user_id=None):
     return list(dict.fromkeys(normalized))
 
 
-def tool_create_booking(user_id, id_gunung, id_jalur, tanggal_naik, anggota_ids=None):
+def _normalize_positive_int(raw_value):
+    """Konversi nilai numerik ke int positif (mendukung 1, "1", 1.0)."""
+    if raw_value is None or isinstance(raw_value, bool):
+        return None
+
+    try:
+        if isinstance(raw_value, int):
+            parsed = raw_value
+        elif isinstance(raw_value, float):
+            if not raw_value.is_integer():
+                return None
+            parsed = int(raw_value)
+        elif isinstance(raw_value, str):
+            text = raw_value.strip()
+            if not text:
+                return None
+            if '.' in text:
+                as_float = float(text)
+                if not as_float.is_integer():
+                    return None
+                parsed = int(as_float)
+            else:
+                parsed = int(text)
+        else:
+            parsed = int(raw_value)
+    except Exception:
+        return None
+
+    return parsed if parsed > 0 else None
+
+
+def _laravel_json_headers(auth_token=None):
+    """Bangun header JSON + Bearer token (jika tersedia)."""
+    headers = {'Content-Type': 'application/json'}
+    token = (auth_token or '').strip()
+    if token.lower().startswith('bearer '):
+        token = token[7:].strip()
+    if token:
+        headers['Authorization'] = f'Bearer {token}'
+    return headers
+
+
+def _safe_json_from_response(response):
+    """Ambil JSON response secara aman tanpa melempar exception."""
+    try:
+        return response.json()
+    except Exception:
+        return {}
+
+
+def _humanize_profile_field(field_name):
+    """Map nama field backend ke label yang lebih mudah dibaca user."""
+    labels = {
+        'name': 'Nama lengkap',
+        'nik': 'NIK',
+        'address': 'Alamat',
+        'phone': 'Nomor telepon',
+        'emergency_phone': 'Kontak darurat',
+        'date_of_birth': 'Tanggal lahir',
+    }
+    return labels.get(field_name, field_name)
+
+
+def _build_booking_failure_response(response):
+    """Normalisasi error booking agar chatbot selalu membalas dengan jelas."""
+    payload = _safe_json_from_response(response)
+    code = (payload.get('code') or '').strip().upper()
+    message = payload.get('message') or payload.get('error') or 'Gagal membuat pesanan.'
+
+    if code == 'PROFILE_INCOMPLETE':
+        missing_fields = payload.get('missing_fields') or []
+        missing_human = [_humanize_profile_field(field) for field in missing_fields]
+        if missing_human:
+            missing_text = ', '.join(missing_human)
+            message = (
+                "Data profil Anda belum lengkap, jadi booking belum bisa diproses. "
+                f"Silakan lengkapi dulu: {missing_text}."
+            )
+        else:
+            message = (
+                "Data profil Anda belum lengkap, jadi booking belum bisa diproses. "
+                "Silakan lengkapi data profil terlebih dahulu."
+            )
+
+        return {
+            'success': False,
+            'code': code,
+            'next_step': payload.get('next_step', 'profile_screen'),
+            'message': message,
+        }
+
+    if code == 'EXPERIENCE_ONBOARDING_REQUIRED':
+        return {
+            'success': False,
+            'code': code,
+            'next_step': payload.get('next_step', 'experience_onboarding'),
+            'message': (
+                "Booking belum bisa diproses karena data pengalaman mendaki belum diisi. "
+                "Silakan selesaikan onboarding pengalaman pendakian terlebih dahulu."
+            ),
+        }
+
+    if code == 'HIGH_RISK_CONFIRMATION_REQUIRED':
+        return {
+            'success': False,
+            'code': code,
+            'message': message,
+            'dss': payload.get('dss'),
+        }
+
+    if response.status_code in (401, 403):
+        fallback = (
+            "Sesi login Anda tidak valid atau sudah berakhir. "
+            "Silakan login ulang lalu coba booking lagi."
+        )
+        return {
+            'success': False,
+            'code': code or 'UNAUTHORIZED',
+            'message': message if message and message != 'Unauthenticated.' else fallback,
+        }
+
+    if not message or message == 'Gagal membuat pesanan.':
+        message = f"Gagal membuat pesanan (HTTP {response.status_code})."
+
+    return {
+        'success': False,
+        'code': code or f'HTTP_{response.status_code}',
+        'message': message,
+    }
+
+
+def tool_create_booking(
+    user_id,
+    id_gunung,
+    id_jalur,
+    tanggal_naik,
+    anggota_ids=None,
+    auth_token=None,
+):
     """Membuat booking + transaksi + pembayaran Midtrans sekaligus"""
     try:
+        if not user_id or not id_gunung or not id_jalur or not tanggal_naik:
+            return {
+                "success": False,
+                "message": (
+                    "Data booking belum lengkap. Pastikan user, gunung, jalur, "
+                    "dan tanggal pendakian sudah dipilih."
+                ),
+            }
+
+        if not auth_token:
+            return {
+                "success": False,
+                "code": "UNAUTHORIZED",
+                "next_step": "login",
+                "message": (
+                    "Sesi login tidak ditemukan. Silakan login ulang, "
+                    "lalu coba pemesanan lagi dari chatbot."
+                ),
+            }
+
         # Hitung tanggal turun (1 hari setelah naik)
         tanggal_naik_dt = datetime.datetime.strptime(tanggal_naik, '%Y-%m-%d')
         tanggal_turun = (tanggal_naik_dt + datetime.timedelta(days=1)).strftime('%Y-%m-%d')
@@ -514,15 +672,14 @@ def tool_create_booking(user_id, id_gunung, id_jalur, tanggal_naik, anggota_ids=
                 "total_harga_tiket": total_harga,
                 "anggota_ids": anggota_clean,
             },
-            headers={'Content-Type': 'application/json'},
+            headers=_laravel_json_headers(auth_token),
             timeout=10
         )
         
         if response.status_code != 201:
-            error_msg = response.json().get('message', 'Gagal membuat pesanan')
-            return {"success": False, "message": f"Gagal membuat pesanan: {error_msg}"}
+            return _build_booking_failure_response(response)
         
-        data = response.json()
+        data = _safe_json_from_response(response)
         order_id = data.get('order', {}).get('id')
         
         if not order_id:
@@ -533,12 +690,12 @@ def tool_create_booking(user_id, id_gunung, id_jalur, tanggal_naik, anggota_ids=
             tx_response = requests.post(
                 f"{LARAVEL_API_URL}/transactions/store",
                 json={"id_pesanan": order_id},
-                headers={'Content-Type': 'application/json'},
+                headers=_laravel_json_headers(auth_token),
                 timeout=10
             )
             
             if tx_response.status_code == 201:
-                tx_data = tx_response.json()
+                tx_data = _safe_json_from_response(tx_response)
                 transaction_id = tx_data.get('transaction', {}).get('id')
                 
                 # Step 3: Buat pembayaran Midtrans
@@ -547,12 +704,12 @@ def tool_create_booking(user_id, id_gunung, id_jalur, tanggal_naik, anggota_ids=
                         pay_response = requests.post(
                             f"{LARAVEL_API_URL}/midtrans/create-payment",
                             json={"order_id": order_id},
-                            headers={'Content-Type': 'application/json'},
+                            headers=_laravel_json_headers(auth_token),
                             timeout=10
                         )
                         
                         if pay_response.status_code in (200, 201):
-                            pay_data = pay_response.json()
+                            pay_data = _safe_json_from_response(pay_response)
                             redirect_url = pay_data.get('data', {}).get('redirect_url', '')
                             
                             return {
@@ -611,8 +768,20 @@ def tool_create_booking(user_id, id_gunung, id_jalur, tanggal_naik, anggota_ids=
                        f"Silakan lanjutkan pembayaran melalui menu Transaksi di aplikasi."),
             "order_id": order_id,
         }
+    except ValueError:
+        return {
+            "success": False,
+            "message": (
+                "Format tanggal tidak valid. Gunakan format YYYY-MM-DD "
+                "(contoh: 2026-04-20)."
+            ),
+        }
     except Exception as e:
-        return {"success": False, "message": f"Error membuat booking: {str(e)}"}
+        print(f"Error membuat booking: {e}")
+        return {
+            "success": False,
+            "message": "Maaf, terjadi kendala saat membuat booking. Silakan coba lagi.",
+        }
 
 
 def tool_get_sar_dashboard():
@@ -1180,7 +1349,13 @@ DATA SISTEM:
 # PROCESS FUNCTION CALLS
 # ============================================
 
-def process_function_call(function_call, role, user_id=None, selected_member_ids=None):
+def process_function_call(
+    function_call,
+    role,
+    user_id=None,
+    selected_member_ids=None,
+    auth_token=None,
+):
     """Memproses function call dari Gemini"""
     func_name = function_call.name
     args = dict(function_call.args) if function_call.args else {}
@@ -1201,20 +1376,34 @@ def process_function_call(function_call, role, user_id=None, selected_member_ids
     print(f"[Function Call] {func_name} with args: {args}")
     
     if func_name == "create_booking":
-        if not user_id:
+        normalized_user_id = _normalize_positive_int(user_id)
+        if not normalized_user_id:
             return {"success": False, "message": "User ID diperlukan untuk membuat booking"}
 
-        anggota_from_args = _normalize_member_ids(args.get('anggota_ids'), user_id=user_id)
-        anggota_from_selected = _normalize_member_ids(selected_member_ids, user_id=user_id)
+        normalized_gunung_id = _normalize_positive_int(args.get('id_gunung'))
+        normalized_jalur_id = _normalize_positive_int(args.get('id_jalur'))
+        if not normalized_gunung_id or not normalized_jalur_id:
+            return {
+                "success": False,
+                "code": "INVALID_BOOKING_INPUT",
+                "message": (
+                    "Pilihan gunung atau jalur belum valid. "
+                    "Silakan pilih kembali dari daftar yang tersedia."
+                ),
+            }
+
+        anggota_from_args = _normalize_member_ids(args.get('anggota_ids'), user_id=normalized_user_id)
+        anggota_from_selected = _normalize_member_ids(selected_member_ids, user_id=normalized_user_id)
         # Gabungkan sumber anggota dari function call + pilihan dari aplikasi.
         anggota_ids = list(dict.fromkeys(anggota_from_args + anggota_from_selected))
 
         result = tool_create_booking(
-            user_id=user_id,
-            id_gunung=args.get('id_gunung'),
-            id_jalur=args.get('id_jalur'),
+            user_id=normalized_user_id,
+            id_gunung=normalized_gunung_id,
+            id_jalur=normalized_jalur_id,
             tanggal_naik=args.get('tanggal_naik'),
-            anggota_ids=anggota_ids
+            anggota_ids=anggota_ids,
+            auth_token=auth_token,
         )
         # Store payment_url for the response
         if result.get('payment_url'):
@@ -1262,6 +1451,7 @@ def get_gemini_response(
     conversation_history=None,
     selected_member_ids=None,
     selected_member_names=None,
+    auth_token=None,
 ):
     """Mendapatkan respons dari Gemini API dengan konteks RAG dan function calling"""
     
@@ -1332,11 +1522,31 @@ def get_gemini_response(
                 role,
                 user_id,
                 selected_member_ids=selected_member_ids,
+                auth_token=auth_token,
             )
             
             # Check if there's a download URL
             if func_result.get('download_url'):
                 download_url = func_result['download_url']
+
+            # Untuk kegagalan readiness booking, kirim jawaban langsung agar user
+            # mendapat instruksi jelas tanpa wording error generik dari model.
+            if (
+                role == 'pendaki'
+                and function_call_part.function_call.name == 'create_booking'
+                and func_result.get('code') in (
+                    'PROFILE_INCOMPLETE',
+                    'EXPERIENCE_ONBOARDING_REQUIRED',
+                    'UNAUTHORIZED',
+                    'INVALID_BOOKING_INPUT',
+                )
+            ):
+                return {
+                    'success': True,
+                    'message': clean_markdown(func_result.get('message', 'Booking belum bisa diproses.')),
+                    'code': func_result.get('code'),
+                    'next_step': func_result.get('next_step'),
+                }
             
             # Send function result back to Gemini
             response = chat.send_message(
@@ -1405,6 +1615,11 @@ def chat():
         user_id = data.get('user_id', None)
         selected_member_ids = data.get('selected_member_ids', [])
         selected_member_names = data.get('selected_member_names', [])
+        auth_token = data.get('auth_token')
+        auth_header = request.headers.get('Authorization', '').strip()
+
+        if not auth_token and auth_header.lower().startswith('bearer '):
+            auth_token = auth_header[7:].strip()
         
         if not user_message:
             return jsonify({
@@ -1424,6 +1639,7 @@ def chat():
             conversation_history,
             selected_member_ids=selected_member_ids,
             selected_member_names=selected_member_names,
+            auth_token=auth_token,
         )
         
         return jsonify(response)
