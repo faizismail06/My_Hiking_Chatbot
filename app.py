@@ -1247,7 +1247,7 @@ FITUR PEMESANAN TIKET:
 - Langkah-langkah pemesanan:
     1. Tanyakan gunung mana yang ingin didaki (tampilkan pilihan bernomor, tanpa ID)
     2. Tanyakan jalur mana yang ingin dipilih (tampilkan pilihan bernomor, tanpa ID)
-  3. Tanyakan tanggal pendakian (format: YYYY-MM-DD, minimal H+1 dari hari ini)
+    3. Tanyakan tanggal pendakian (format: YYYY-MM-DD, boleh mulai hari ini)
     4. Tanyakan anggota tambahan (teman/orang lain) berdasarkan ID user, opsional. Jika tidak ada, isi kosong.
     5. Konfirmasi detail pesanan (gunung, jalur, tanggal, biaya, jumlah pendaki) dalam format TEKS BIASA (bukan markdown)
     6. Jika user setuju, panggil fungsi create_booking dengan parameter yang sesuai (termasuk anggota_ids jika ada)
@@ -1296,9 +1296,10 @@ CARA CRUD:
 - PENTING: Selalu minta konfirmasi sebelum melakukan operasi create/update/delete
 
 CARA EKSPOR EXCEL:
-- Jika admin meminta rekap atau laporan, tanyakan tipe data apa yang ingin diekspor
-- Panggil fungsi export_excel dengan tipe data yang sesuai
-- Setelah file berhasil dibuat, berikan link download ke admin
+- Jika admin meminta rekap/laporan dan tipe datanya sudah jelas, LANGSUNG panggil fungsi export_excel
+- Jika tipe data belum jelas, tanyakan tipe data apa yang ingin diekspor
+- Jika admin hanya bertanya data, status, atau ringkasan, JANGAN membuat file Excel
+- Setelah file berhasil dibuat, beri tahu bahwa file siap diunduh tanpa menampilkan URL mentah
 
 Tanggal hari ini: {datetime.datetime.now().strftime('%Y-%m-%d')}
 
@@ -1333,9 +1334,10 @@ REMINDER SAR:
 - Berikan detail lengkap: nama pendaki, lokasi, tipe darurat, koordinat
 
 CARA EKSPOR EXCEL:
-- Jika penjaga meminta rekap atau laporan, tanyakan tipe data apa yang ingin diekspor
-- Panggil fungsi export_excel dengan tipe data yang sesuai
-- Setelah file berhasil dibuat, berikan link download
+- Jika penjaga meminta rekap/laporan dan tipe datanya sudah jelas, LANGSUNG panggil fungsi export_excel
+- Jika tipe data belum jelas, tanyakan tipe data apa yang ingin diekspor
+- Jika penjaga hanya bertanya status SAR atau data umum, JANGAN membuat file Excel
+- Setelah file berhasil dibuat, beri tahu bahwa file siap diunduh tanpa menampilkan URL mentah
 
 Tanggal hari ini: {datetime.datetime.now().strftime('%Y-%m-%d')}
 
@@ -1355,6 +1357,7 @@ def process_function_call(
     user_id=None,
     selected_member_ids=None,
     auth_token=None,
+    user_message=None,
 ):
     """Memproses function call dari Gemini"""
     func_name = function_call.name
@@ -1414,6 +1417,33 @@ def process_function_call(
         return tool_get_sar_dashboard()
     
     elif func_name == "export_excel":
+        export_intent_text = (user_message or '').lower()
+        has_explicit_export_intent = any(
+            keyword in export_intent_text
+            for keyword in ('export', 'excel', 'unduh', 'download', 'laporan', 'rekap')
+        )
+
+        requested_type = str(args.get('data_type', '')).strip().lower()
+        valid_types_by_role = {
+            'admin': {'sar_dashboard', 'laporan_pendapatan', 'pesanan', 'transaksi', 'user', 'gunung', 'jalur'},
+            'penjaga': {'sar_dashboard', 'laporan_pendapatan', 'pesanan', 'transaksi', 'gunung', 'jalur'},
+        }
+        is_valid_type = requested_type in valid_types_by_role.get(role, set())
+        is_affirmative_reply = any(
+            keyword in export_intent_text
+            for keyword in ('iya', 'ya', 'yes', 'oke', 'ok', 'lanjut', 'silakan', 'boleh')
+        )
+
+        # Izinkan export saat user konfirmasi singkat (mis. "iya")
+        # selama tipe data ekspor sudah jelas dari konteks function call.
+        can_export_on_confirmation = is_valid_type and is_affirmative_reply
+
+        if not has_explicit_export_intent and not can_export_on_confirmation:
+            return {
+                'success': False,
+                'message': 'Ekspor Excel dibatalkan karena permintaan unduhan belum jelas.',
+            }
+
         result = tool_export_excel(args.get('data_type', ''), role)
         if result.get('success') and result.get('filename'):
             result['download_url'] = f"/api/chat/export/{result['filename']}"
@@ -1523,6 +1553,7 @@ def get_gemini_response(
                 user_id,
                 selected_member_ids=selected_member_ids,
                 auth_token=auth_token,
+                user_message=user_message,
             )
             
             # Check if there's a download URL
