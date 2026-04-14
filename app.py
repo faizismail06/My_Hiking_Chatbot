@@ -1411,6 +1411,10 @@ def process_function_call(
         # Store payment_url for the response
         if result.get('payment_url'):
             get_gemini_response._last_payment_url = result['payment_url']
+        if result.get('order_id'):
+            get_gemini_response._last_order_id = result['order_id']
+        if result.get('transaction_id'):
+            get_gemini_response._last_transaction_id = result['transaction_id']
         return result
     
     elif func_name == "get_sar_dashboard":
@@ -1611,6 +1615,14 @@ def get_gemini_response(
         if hasattr(get_gemini_response, '_last_payment_url') and get_gemini_response._last_payment_url:
             result['payment_url'] = get_gemini_response._last_payment_url
             get_gemini_response._last_payment_url = None
+
+        if hasattr(get_gemini_response, '_last_order_id') and get_gemini_response._last_order_id:
+            result['order_id'] = get_gemini_response._last_order_id
+            get_gemini_response._last_order_id = None
+
+        if hasattr(get_gemini_response, '_last_transaction_id') and get_gemini_response._last_transaction_id:
+            result['transaction_id'] = get_gemini_response._last_transaction_id
+            get_gemini_response._last_transaction_id = None
         
         return result
         
