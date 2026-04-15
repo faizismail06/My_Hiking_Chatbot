@@ -616,17 +616,18 @@ def tool_create_booking(
     id_gunung,
     id_jalur,
     tanggal_naik,
+    tanggal_turun,
     anggota_ids=None,
     auth_token=None,
 ):
     """Membuat booking + transaksi + pembayaran Midtrans sekaligus"""
     try:
-        if not user_id or not id_gunung or not id_jalur or not tanggal_naik:
+        if not user_id or not id_gunung or not id_jalur or not tanggal_naik or not tanggal_turun:
             return {
                 "success": False,
                 "message": (
                     "Data booking belum lengkap. Pastikan user, gunung, jalur, "
-                    "dan tanggal pendakian sudah dipilih."
+                    "tanggal naik, dan tanggal turun sudah dipilih."
                 ),
             }
 
@@ -641,9 +642,17 @@ def tool_create_booking(
                 ),
             }
 
-        # Hitung tanggal turun (1 hari setelah naik)
+        # Validasi format dan logika tanggal
         tanggal_naik_dt = datetime.datetime.strptime(tanggal_naik, '%Y-%m-%d')
-        tanggal_turun = (tanggal_naik_dt + datetime.timedelta(days=1)).strftime('%Y-%m-%d')
+        tanggal_turun_dt = datetime.datetime.strptime(tanggal_turun, '%Y-%m-%d')
+        if tanggal_turun_dt < tanggal_naik_dt:
+            return {
+                "success": False,
+                "message": (
+                    "Tanggal turun tidak boleh sebelum tanggal naik. "
+                    "Untuk tektok, gunakan tanggal naik dan turun yang sama."
+                ),
+            }
         
         # Ambil biaya dari jalur
         trails = fetch_trails_data()
@@ -1112,14 +1121,15 @@ def get_tools_for_role(role):
                         properties={
                             "id_gunung": genai.protos.Schema(type=genai.protos.Type.INTEGER, description="ID gunung yang dipilih"),
                             "id_jalur": genai.protos.Schema(type=genai.protos.Type.INTEGER, description="ID jalur pendakian yang dipilih"),
-                            "tanggal_naik": genai.protos.Schema(type=genai.protos.Type.STRING, description="Tanggal pendakian dalam format YYYY-MM-DD"),
+                            "tanggal_naik": genai.protos.Schema(type=genai.protos.Type.STRING, description="Tanggal naik/pendakian dalam format YYYY-MM-DD"),
+                            "tanggal_turun": genai.protos.Schema(type=genai.protos.Type.STRING, description="Tanggal turun dalam format YYYY-MM-DD. Sama dengan tanggal naik untuk tektok, atau setelah tanggal naik untuk camping."),
                             "anggota_ids": genai.protos.Schema(
                                 type=genai.protos.Type.ARRAY,
                                 items=genai.protos.Schema(type=genai.protos.Type.INTEGER),
                                 description="Daftar ID teman/anggota tambahan (opsional)"
                             ),
                         },
-                        required=["id_gunung", "id_jalur", "tanggal_naik"]
+                        required=["id_gunung", "id_jalur", "tanggal_naik", "tanggal_turun"]
                     )
                 ),
             ]
@@ -1247,12 +1257,26 @@ FITUR PEMESANAN TIKET:
 - Langkah-langkah pemesanan:
     1. Tanyakan gunung mana yang ingin didaki (tampilkan pilihan bernomor, tanpa ID)
     2. Tanyakan jalur mana yang ingin dipilih (tampilkan pilihan bernomor, tanpa ID)
-    3. Tanyakan tanggal pendakian (format: YYYY-MM-DD, boleh mulai hari ini)
-    4. Tanyakan anggota tambahan (teman/orang lain) berdasarkan ID user, opsional. Jika tidak ada, isi kosong.
-    5. Konfirmasi detail pesanan (gunung, jalur, tanggal, biaya, jumlah pendaki) dalam format TEKS BIASA (bukan markdown)
-    6. Jika user setuju, panggil fungsi create_booking dengan parameter yang sesuai (termasuk anggota_ids jika ada)
+    3. Tanyakan tanggal pendakian. Jika user bilang "besok", "lusa", atau sebutan umum, konversi ke format YYYY-MM-DD berdasarkan tanggal hari ini.
+    4. WAJIB tanyakan TIPE PENDAKIAN ke user:
+       - "Apakah pendakiannya tektok (naik turun di hari yang sama) atau ngecamp?"
+       - Jika TEKTOK: tanggal_turun = tanggal_naik (sama persis)
+       - Jika NGECAMP: tanyakan "Mau camping berapa hari?" atau "Berapa malam?". Hitung tanggal_turun = tanggal_naik + jumlah hari camping. Contoh: naik 2026-04-20 camp 3 hari 2 malam, maka tanggal_turun = 2026-04-22.
+    5. Tanyakan anggota tambahan (teman/orang lain) berdasarkan ID user, opsional. Jika tidak ada, isi kosong.
+    6. WAJIB tampilkan DETAIL PESANAN (ringkasan) dalam format TEKS BIASA sebelum konfirmasi:
+       - Gunung: [nama gunung]
+       - Jalur: [nama jalur]
+       - Tanggal Naik: [tanggal naik]
+       - Tanggal Turun: [tanggal turun]
+       - Tipe: Tektok / Camping [X hari Y malam]
+       - Jumlah Pendaki: [jumlah] orang
+       - Biaya per Orang: Rp [biaya]
+       - Total Biaya: Rp [total]
+       Lalu tanyakan: "Apakah detail pesanan di atas sudah benar? Jika ya, saya akan proses pemesanannya."
+    7. HANYA jika user setuju/konfirmasi, panggil fungsi create_booking dengan parameter yang sesuai (termasuk tanggal_turun dan anggota_ids jika ada)
 - Setelah booking berhasil, pembayaran Midtrans akan otomatis disiapkan. Sampaikan ke user untuk klik tombol Bayar Sekarang.
 - PENTING: Selalu konfirmasi dulu sebelum membuat booking. Jangan langsung membuat booking tanpa konfirmasi.
+- PENTING: Jangan pernah melewati langkah tanya tektok/camping. Selalu tanyakan tipe pendakian.
 - Gunakan ID gunung dan ID jalur INTERNAL dari mapping (BUKAN menampilkan ID ke user)
 - Tanggal hari ini: {datetime.datetime.now().strftime('%Y-%m-%d')}
 
@@ -1405,6 +1429,7 @@ def process_function_call(
             id_gunung=normalized_gunung_id,
             id_jalur=normalized_jalur_id,
             tanggal_naik=args.get('tanggal_naik'),
+            tanggal_turun=args.get('tanggal_turun'),
             anggota_ids=anggota_ids,
             auth_token=auth_token,
         )
