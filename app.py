@@ -1765,7 +1765,7 @@ def chat_info():
                     'Informasi jalur pendakian (jarak, biaya, basecamp)',
                     'Tata tertib dan peraturan pendakian',
                     'Tips dan saran pendakian',
-                    'Rekomendasi jalur berdasarkan preferensi',
+                    'Saran jalur berdasarkan preferensi',
                     'Pemesanan tiket pendakian via chat',
                 ],
                 'supported_roles': ['pendaki', 'admin', 'penjaga'],
