@@ -1,0 +1,213 @@
+"""
+Database module for My Hiking Chatbot
+=====================================
+Database connection and all data-fetching functions.
+"""
+
+import pymysql
+from config import DB_CONFIG
+
+
+def get_db_connection():
+    """Membuat koneksi ke database MySQL"""
+    return pymysql.connect(**DB_CONFIG)
+
+
+def init_chat_history_table():
+    """Membuat tabel chat_histories jika belum ada"""
+    try:
+        conn = get_db_connection()
+        with conn.cursor() as cursor:
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS chat_histories (
+                    id INT AUTO_INCREMENT PRIMARY KEY,
+                    user_id INT NOT NULL,
+                    role VARCHAR(20) NOT NULL DEFAULT 'pendaki',
+                    title VARCHAR(255) DEFAULT NULL,
+                    messages LONGTEXT NOT NULL,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                    INDEX idx_user_role (user_id, role)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+            """)
+        conn.commit()
+        conn.close()
+        print("[OK] Tabel chat_histories siap")
+    except Exception as e:
+        print(f"[Warning] Gagal membuat tabel chat_histories: {e}")
+
+
+# ============================================
+# DATABASE FETCH FUNCTIONS
+# ============================================
+
+def fetch_mountains_data():
+    """Mengambil data gunung dari database"""
+    try:
+        conn = get_db_connection()
+        with conn.cursor() as cursor:
+            query = """
+                SELECT m.id, m.nama, m.deskripsi, m.ketinggian, m.latitude, m.longitude,
+                       p.name as provinsi, r.name as kabupaten, d.name as kecamatan, v.name as desa
+                FROM mountains m
+                LEFT JOIN reg_provinces p ON m.province_id = p.id
+                LEFT JOIN reg_regencies r ON m.regency_id = r.id
+                LEFT JOIN reg_districts d ON m.district_id = d.id
+                LEFT JOIN reg_villages v ON m.village_id = v.id
+            """
+            cursor.execute(query)
+            mountains = cursor.fetchall()
+        conn.close()
+        return mountains
+    except Exception as e:
+        print(f"Error fetching mountains: {e}")
+        return []
+
+
+def fetch_trails_data():
+    """Mengambil data jalur pendakian dari database"""
+    try:
+        conn = get_db_connection()
+        with conn.cursor() as cursor:
+            query = """
+                SELECT r.id, r.nama as nama_jalur, r.jarak, r.deskripsi, r.biaya, r.latitude, r.longitude,
+                       m.nama as nama_gunung, m.id as id_gunung, m.ketinggian,
+                       p.name as provinsi, rg.name as kabupaten, d.name as kecamatan, v.name as desa
+                FROM routes r
+                LEFT JOIN mountains m ON r.id_gunung = m.id
+                LEFT JOIN reg_provinces p ON r.province_id = p.id
+                LEFT JOIN reg_regencies rg ON r.regency_id = rg.id
+                LEFT JOIN reg_districts d ON r.district_id = d.id
+                LEFT JOIN reg_villages v ON r.village_id = v.id
+            """
+            cursor.execute(query)
+            trails = cursor.fetchall()
+        conn.close()
+        return trails
+    except Exception as e:
+        print(f"Error fetching trails: {e}")
+        return []
+
+
+def fetch_rules_data():
+    """Mengambil data tata tertib dari database"""
+    try:
+        conn = get_db_connection()
+        with conn.cursor() as cursor:
+            query = """
+                SELECT ru.id, ru.description as tata_tertib, 
+                       r.nama as nama_jalur, m.nama as nama_gunung
+                FROM rules ru
+                LEFT JOIN routes r ON ru.jalur_id = r.id
+                LEFT JOIN mountains m ON r.id_gunung = m.id
+            """
+            cursor.execute(query)
+            rules = cursor.fetchall()
+        conn.close()
+        return rules
+    except Exception as e:
+        print(f"Error fetching rules: {e}")
+        return []
+
+
+def fetch_orders_data():
+    """Mengambil data pesanan dari database"""
+    try:
+        conn = get_db_connection()
+        with conn.cursor() as cursor:
+            query = """
+                SELECT o.id, o.id_gunung, o.id_jalur, o.id_user, 
+                       o.tanggal_naik, o.tanggal_turun, o.total_harga_tiket, o.status,
+                       o.created_at, o.updated_at,
+                       m.nama as nama_gunung, r.nama as nama_jalur,
+                       u.name as nama_user, u.email as email_user
+                FROM orders o
+                LEFT JOIN mountains m ON o.id_gunung = m.id
+                LEFT JOIN routes r ON o.id_jalur = r.id
+                LEFT JOIN users u ON o.id_user = u.id
+                ORDER BY o.created_at DESC
+            """
+            cursor.execute(query)
+            orders = cursor.fetchall()
+        conn.close()
+        return orders
+    except Exception as e:
+        print(f"Error fetching orders: {e}")
+        return []
+
+
+def fetch_transactions_data():
+    """Mengambil data transaksi dari database"""
+    try:
+        conn = get_db_connection()
+        with conn.cursor() as cursor:
+            query = """
+                SELECT t.id, t.id_pesanan, t.total_bayar, t.status_pesanan,
+                       t.waktu_pembayaran, t.bukti, t.payment_type,
+                       t.created_at, t.updated_at,
+                       o.id_gunung, o.id_jalur, o.id_user, o.tanggal_naik,
+                       m.nama as nama_gunung, r.nama as nama_jalur,
+                       u.name as nama_user
+                FROM transactions t
+                LEFT JOIN orders o ON t.id_pesanan = o.id
+                LEFT JOIN mountains m ON o.id_gunung = m.id
+                LEFT JOIN routes r ON o.id_jalur = r.id
+                LEFT JOIN users u ON o.id_user = u.id
+                ORDER BY t.created_at DESC
+            """
+            cursor.execute(query)
+            transactions = cursor.fetchall()
+        conn.close()
+        return transactions
+    except Exception as e:
+        print(f"Error fetching transactions: {e}")
+        return []
+
+
+def fetch_panic_data():
+    """Mengambil data panic/SAR dari database"""
+    try:
+        conn = get_db_connection()
+        with conn.cursor() as cursor:
+            query = """
+                SELECT p.id, p.user_id, p.order_id, p.latitude, p.longitude,
+                       p.emergency_type, p.description, p.status,
+                       p.created_at, p.updated_at,
+                       u.name as nama_user, u.phone as telepon_user, u.emergency_phone,
+                       o.id_gunung, o.id_jalur, o.tanggal_naik,
+                       m.nama as nama_gunung, r.nama as nama_jalur
+                FROM panic_requests p
+                LEFT JOIN users u ON p.user_id = u.id
+                LEFT JOIN orders o ON p.order_id = o.id
+                LEFT JOIN mountains m ON o.id_gunung = m.id
+                LEFT JOIN routes r ON o.id_jalur = r.id
+                ORDER BY p.created_at DESC
+            """
+            cursor.execute(query)
+            panics = cursor.fetchall()
+        conn.close()
+        return panics
+    except Exception as e:
+        print(f"Error fetching panics: {e}")
+        return []
+
+
+def fetch_users_data():
+    """Mengambil data user dari database"""
+    try:
+        conn = get_db_connection()
+        with conn.cursor() as cursor:
+            query = """
+                SELECT u.id, u.name, u.email, u.phone, u.address, u.nik,
+                       u.emergency_phone, u.date_of_birth, u.level,
+                       u.created_at, u.updated_at
+                FROM users u
+                ORDER BY u.created_at DESC
+            """
+            cursor.execute(query)
+            users = cursor.fetchall()
+        conn.close()
+        return users
+    except Exception as e:
+        print(f"Error fetching users: {e}")
+        return []
