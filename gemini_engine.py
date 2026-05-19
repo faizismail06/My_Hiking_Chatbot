@@ -142,12 +142,19 @@ def get_system_prompt(role, context, selected_member_ids=None, selected_member_n
     if role == 'pendaki':
         selected_member_ids = selected_member_ids or []
         selected_member_names = selected_member_names or []
-        selected_members_text = "Tidak ada anggota tambahan dipilih dari aplikasi."
+        selected_member_count = len(selected_member_ids)
+        total_pendaki_estimate = 1 + selected_member_count
+        selected_members_text = (
+            "Tidak ada anggota tambahan dipilih dari aplikasi. "
+            f"Jumlah anggota tambahan: 0 (total pendaki termasuk user: 1)."
+        )
         if selected_member_ids:
             readable_names = ", ".join(selected_member_names) if selected_member_names else "-"
             selected_members_text = (
                 f"ID anggota terpilih dari aplikasi: {selected_member_ids}. "
-                f"Nama terdeteksi: {readable_names}."
+                f"Nama terdeteksi: {readable_names}. "
+                f"Jumlah anggota tambahan terdeteksi: {selected_member_count} "
+                f"(total pendaki termasuk user: {total_pendaki_estimate})."
             )
 
         return f"""Kamu adalah asisten virtual bernama "Hiking Buddy" untuk aplikasi pendakian gunung My Hiking.
@@ -208,6 +215,7 @@ ANGGOTA TERPILIH DARI APLIKASI:
 {selected_members_text}
 - Jika anggota terpilih tersedia, PRIORITASKAN ID tersebut untuk parameter anggota_ids saat memanggil create_booking.
 - Tetap tampilkan konfirmasi nama anggota ke user sebelum final booking.
+- Jika user belum menyebut jumlah anggota tambahan, gunakan jumlah terdeteksi dari aplikasi sebagai acuan.
 
 DATA YANG TERSEDIA:
 {context}
@@ -438,6 +446,14 @@ def get_gemini_response(
 ):
     """Mendapatkan respons dari Gemini API dengan konteks RAG dan function calling"""
     
+    # Normalize selected members once so counts stay consistent in prompt and tool calls.
+    normalized_user_id = _normalize_positive_int(user_id)
+    normalized_selected_member_ids = _normalize_member_ids(
+        selected_member_ids,
+        user_id=normalized_user_id,
+    )
+    normalized_selected_member_names = selected_member_names or []
+
     # Build context based on role
     if role == 'admin':
         context = build_context_admin()
@@ -450,8 +466,8 @@ def get_gemini_response(
     system_prompt = get_system_prompt(
         role,
         context,
-        selected_member_ids=selected_member_ids,
-        selected_member_names=selected_member_names,
+        selected_member_ids=normalized_selected_member_ids,
+        selected_member_names=normalized_selected_member_names,
     )
     
     # Get tools for role
@@ -504,7 +520,7 @@ def get_gemini_response(
                 function_call_part.function_call,
                 role,
                 user_id,
-                selected_member_ids=selected_member_ids,
+                selected_member_ids=normalized_selected_member_ids,
                 auth_token=auth_token,
                 user_message=user_message,
             )
