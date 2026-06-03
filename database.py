@@ -211,3 +211,127 @@ def fetch_users_data():
     except Exception as e:
         print(f"Error fetching users: {e}")
         return []
+
+
+# ============================================
+# FILTERED FETCH FUNCTIONS (per-user isolation)
+# ============================================
+
+def fetch_trails_by_guard(user_id):
+    """Mengambil data jalur yang dikelola oleh penjaga tertentu (routes.user_id)"""
+    if not user_id:
+        return []
+    try:
+        conn = get_db_connection()
+        with conn.cursor() as cursor:
+            query = """
+                SELECT r.id, r.nama as nama_jalur, r.jarak, r.deskripsi, r.biaya, r.latitude, r.longitude,
+                       r.user_id,
+                       m.nama as nama_gunung, m.id as id_gunung, m.ketinggian,
+                       p.name as provinsi, rg.name as kabupaten, d.name as kecamatan, v.name as desa
+                FROM routes r
+                LEFT JOIN mountains m ON r.id_gunung = m.id
+                LEFT JOIN reg_provinces p ON r.province_id = p.id
+                LEFT JOIN reg_regencies rg ON r.regency_id = rg.id
+                LEFT JOIN reg_districts d ON r.district_id = d.id
+                LEFT JOIN reg_villages v ON r.village_id = v.id
+                WHERE r.user_id = %s
+            """
+            cursor.execute(query, (int(user_id),))
+            trails = cursor.fetchall()
+        conn.close()
+        return trails
+    except Exception as e:
+        print(f"Error fetching trails for guard {user_id}: {e}")
+        return []
+
+
+def fetch_orders_by_trail_ids(trail_ids):
+    """Mengambil data pesanan berdasarkan daftar ID jalur"""
+    if not trail_ids:
+        return []
+    try:
+        conn = get_db_connection()
+        with conn.cursor() as cursor:
+            placeholders = ', '.join(['%s'] * len(trail_ids))
+            query = f"""
+                SELECT o.id, o.id_gunung, o.id_jalur, o.id_user,
+                       o.tanggal_naik, o.tanggal_turun, o.total_harga_tiket, o.status,
+                       o.created_at, o.updated_at,
+                       m.nama as nama_gunung, r.nama as nama_jalur,
+                       u.name as nama_user, u.email as email_user
+                FROM orders o
+                LEFT JOIN mountains m ON o.id_gunung = m.id
+                LEFT JOIN routes r ON o.id_jalur = r.id
+                LEFT JOIN users u ON o.id_user = u.id
+                WHERE o.id_jalur IN ({placeholders})
+                ORDER BY o.created_at DESC
+            """
+            cursor.execute(query, tuple(int(tid) for tid in trail_ids))
+            orders = cursor.fetchall()
+        conn.close()
+        return orders
+    except Exception as e:
+        print(f"Error fetching orders by trail_ids {trail_ids}: {e}")
+        return []
+
+
+def fetch_panics_by_trail_ids(trail_ids):
+    """Mengambil data panic/SAR berdasarkan daftar ID jalur"""
+    if not trail_ids:
+        return []
+    try:
+        conn = get_db_connection()
+        with conn.cursor() as cursor:
+            placeholders = ', '.join(['%s'] * len(trail_ids))
+            query = f"""
+                SELECT p.id, p.user_id, p.order_id, p.latitude, p.longitude,
+                       p.emergency_type, p.description, p.status,
+                       p.created_at, p.updated_at,
+                       u.name as nama_user, u.phone as telepon_user, u.emergency_phone,
+                       o.id_gunung, o.id_jalur, o.tanggal_naik,
+                       m.nama as nama_gunung, r.nama as nama_jalur
+                FROM panic_requests p
+                LEFT JOIN users u ON p.user_id = u.id
+                LEFT JOIN orders o ON p.order_id = o.id
+                LEFT JOIN mountains m ON o.id_gunung = m.id
+                LEFT JOIN routes r ON o.id_jalur = r.id
+                WHERE o.id_jalur IN ({placeholders})
+                ORDER BY p.created_at DESC
+            """
+            cursor.execute(query, tuple(int(tid) for tid in trail_ids))
+            panics = cursor.fetchall()
+        conn.close()
+        return panics
+    except Exception as e:
+        print(f"Error fetching panics by trail_ids {trail_ids}: {e}")
+        return []
+
+
+def fetch_orders_by_user(user_id):
+    """Mengambil data pesanan milik pendaki tertentu"""
+    if not user_id:
+        return []
+    try:
+        conn = get_db_connection()
+        with conn.cursor() as cursor:
+            query = """
+                SELECT o.id, o.id_gunung, o.id_jalur, o.id_user,
+                       o.tanggal_naik, o.tanggal_turun, o.total_harga_tiket, o.status,
+                       o.created_at, o.updated_at,
+                       m.nama as nama_gunung, r.nama as nama_jalur,
+                       u.name as nama_user, u.email as email_user
+                FROM orders o
+                LEFT JOIN mountains m ON o.id_gunung = m.id
+                LEFT JOIN routes r ON o.id_jalur = r.id
+                LEFT JOIN users u ON o.id_user = u.id
+                WHERE o.id_user = %s
+                ORDER BY o.created_at DESC
+            """
+            cursor.execute(query, (int(user_id),))
+            orders = cursor.fetchall()
+        conn.close()
+        return orders
+    except Exception as e:
+        print(f"Error fetching orders for user {user_id}: {e}")
+        return []

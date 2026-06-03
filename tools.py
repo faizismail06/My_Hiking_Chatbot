@@ -10,7 +10,7 @@ import json
 import datetime
 import requests
 
-from config import LARAVEL_API_URL, EXPORT_DIR
+from config import LARAVEL_API_URL, EXPORT_DIR, CHATBOT_SECRET
 from database import (
     fetch_trails_data,
     fetch_panic_data,
@@ -81,14 +81,22 @@ def _normalize_positive_int(raw_value):
     return parsed if parsed > 0 else None
 
 
-def _laravel_json_headers(auth_token=None):
-    """Bangun header JSON + Bearer token (jika tersedia)."""
+def _laravel_json_headers(auth_token=None, chatbot_crud=False):
+    """Bangun header JSON + Bearer token (jika tersedia).
+
+    Args:
+        auth_token: Sanctum bearer token untuk endpoint yang memerlukan auth user.
+        chatbot_crud: Jika True, tambahkan header X-Chatbot-Secret untuk
+                      endpoint CRUD chatbot admin di Laravel.
+    """
     headers = {'Content-Type': 'application/json'}
     token = (auth_token or '').strip()
     if token.lower().startswith('bearer '):
         token = token[7:].strip()
     if token:
         headers['Authorization'] = f'Bearer {token}'
+    if chatbot_crud and CHATBOT_SECRET:
+        headers['X-Chatbot-Secret'] = CHATBOT_SECRET
     return headers
 
 
@@ -584,7 +592,7 @@ def tool_crud_mountain(action, data=None):
             response = requests.post(
                 f"{LARAVEL_API_URL}/mountains",
                 json=data,
-                headers={'Content-Type': 'application/json'},
+                headers=_laravel_json_headers(chatbot_crud=True),
                 timeout=10
             )
             if response.status_code in (200, 201):
@@ -599,7 +607,7 @@ def tool_crud_mountain(action, data=None):
             response = requests.put(
                 f"{LARAVEL_API_URL}/mountains/{mountain_id}",
                 json=data,
-                headers={'Content-Type': 'application/json'},
+                headers=_laravel_json_headers(chatbot_crud=True),
                 timeout=10
             )
             if response.status_code == 200:
@@ -613,6 +621,7 @@ def tool_crud_mountain(action, data=None):
                 return {"success": False, "message": "ID gunung diperlukan untuk delete"}
             response = requests.delete(
                 f"{LARAVEL_API_URL}/mountains/{mountain_id}",
+                headers=_laravel_json_headers(chatbot_crud=True),
                 timeout=10
             )
             if response.status_code in (200, 204):
@@ -636,7 +645,7 @@ def tool_crud_trail(action, data=None):
             response = requests.post(
                 f"{LARAVEL_API_URL}/routes",
                 json=data,
-                headers={'Content-Type': 'application/json'},
+                headers=_laravel_json_headers(chatbot_crud=True),
                 timeout=10
             )
             if response.status_code in (200, 201):
@@ -651,7 +660,7 @@ def tool_crud_trail(action, data=None):
             response = requests.put(
                 f"{LARAVEL_API_URL}/routes/{trail_id}",
                 json=data,
-                headers={'Content-Type': 'application/json'},
+                headers=_laravel_json_headers(chatbot_crud=True),
                 timeout=10
             )
             if response.status_code == 200:
@@ -665,6 +674,7 @@ def tool_crud_trail(action, data=None):
                 return {"success": False, "message": "ID jalur diperlukan untuk delete"}
             response = requests.delete(
                 f"{LARAVEL_API_URL}/routes/{trail_id}",
+                headers=_laravel_json_headers(chatbot_crud=True),
                 timeout=10
             )
             if response.status_code in (200, 204):

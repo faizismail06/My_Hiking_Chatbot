@@ -31,6 +31,10 @@ DB_CONFIG = {
 # Laravel API base URL
 LARAVEL_API_URL = os.getenv('LARAVEL_API_URL', 'http://127.0.0.1:8000/api')
 
+# Kunci rahasia untuk endpoint CRUD chatbot admin di Laravel.
+# Harus sama dengan nilai CHATBOT_SECRET di .env Laravel.
+CHATBOT_SECRET = os.getenv('CHATBOT_SECRET', '')
+
 # Directory untuk menyimpan file Excel yang di-generate
 EXPORT_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'exports')
 os.makedirs(EXPORT_DIR, exist_ok=True)

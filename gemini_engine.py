@@ -458,9 +458,9 @@ def get_gemini_response(
     if role == 'admin':
         context = build_context_admin()
     elif role == 'penjaga':
-        context = build_context_penjaga()
+        context = build_context_penjaga(user_id=normalized_user_id)
     else:
-        context = build_context_pendaki()
+        context = build_context_pendaki(user_id=normalized_user_id)
     
     # Get system prompt
     system_prompt = get_system_prompt(
