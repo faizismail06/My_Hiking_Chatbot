@@ -47,7 +47,7 @@ def fetch_mountains_data():
         conn = get_db_connection()
         with conn.cursor() as cursor:
             query = """
-                SELECT m.id, m.nama, m.deskripsi, m.ketinggian, m.latitude, m.longitude,
+                SELECT m.id, m.nama, m.deskripsi, m.ketinggian, m.latitude, m.longitude, m.gambar_gunung,
                        p.name as provinsi, r.name as kabupaten, d.name as kecamatan, v.name as desa
                 FROM mountains m
                 LEFT JOIN reg_provinces p ON m.province_id = p.id
@@ -305,6 +305,81 @@ def fetch_panics_by_trail_ids(trail_ids):
         return panics
     except Exception as e:
         print(f"Error fetching panics by trail_ids {trail_ids}: {e}")
+        return []
+
+
+def fetch_routes_by_mountain_name(mountain_name):
+    """Mengambil semua jalur (routes) berdasarkan nama gunung (untuk Static FAQ)"""
+    try:
+        conn = get_db_connection()
+        with conn.cursor() as cursor:
+            query = """
+                SELECT r.id, r.nama as nama_jalur, r.jarak, r.deskripsi, r.biaya,
+                       r.durasi as estimasi_waktu, r.tingkat_kesulitan, r.gambar_jalur,
+                       m.nama as nama_gunung, m.id as id_gunung,
+                       v.name as desa, d.name as kecamatan, rg.name as kabupaten, p.name as provinsi
+                FROM routes r
+                INNER JOIN mountains m ON r.id_gunung = m.id
+                LEFT JOIN reg_provinces p ON r.province_id = p.id
+                LEFT JOIN reg_regencies rg ON r.regency_id = rg.id
+                LEFT JOIN reg_districts d ON r.district_id = d.id
+                LEFT JOIN reg_villages v ON r.village_id = v.id
+                WHERE m.nama LIKE %s
+            """
+            cursor.execute(query, (f"%{mountain_name}%",))
+            routes = cursor.fetchall()
+        conn.close()
+        return routes
+    except Exception as e:
+        print(f"Error fetching routes for mountain {mountain_name}: {e}")
+        return []
+
+
+def fetch_route_detail(mountain_name, route_name):
+    """Mengambil detail satu rute/jalur spesifik (untuk Static FAQ)"""
+    try:
+        conn = get_db_connection()
+        with conn.cursor() as cursor:
+            query = """
+                SELECT r.id, r.nama as nama_jalur, r.jarak, r.deskripsi, r.biaya,
+                       r.durasi as estimasi_waktu, r.tingkat_kesulitan, r.gambar_jalur,
+                       m.nama as nama_gunung, m.id as id_gunung,
+                       v.name as desa, d.name as kecamatan, rg.name as kabupaten, p.name as provinsi
+                FROM routes r
+                INNER JOIN mountains m ON r.id_gunung = m.id
+                LEFT JOIN reg_provinces p ON r.province_id = p.id
+                LEFT JOIN reg_regencies rg ON r.regency_id = rg.id
+                LEFT JOIN reg_districts d ON r.district_id = d.id
+                LEFT JOIN reg_villages v ON r.village_id = v.id
+                WHERE m.nama LIKE %s AND r.nama LIKE %s
+            """
+            cursor.execute(query, (f"%{mountain_name}%", f"%{route_name}%"))
+            detail = cursor.fetchone()
+        conn.close()
+        return detail
+    except Exception as e:
+        print(f"Error fetching route detail for {mountain_name} via {route_name}: {e}")
+        return None
+
+
+def fetch_rules_by_mountain(mountain_name):
+    """Mengambil aturan/tata tertib pendakian untuk gunung tertentu (untuk Static FAQ)"""
+    try:
+        conn = get_db_connection()
+        with conn.cursor() as cursor:
+            query = """
+                SELECT ru.description as tata_tertib, r.nama as nama_jalur, m.nama as nama_gunung
+                FROM rules ru
+                INNER JOIN routes r ON ru.jalur_id = r.id
+                INNER JOIN mountains m ON r.id_gunung = m.id
+                WHERE m.nama LIKE %s
+            """
+            cursor.execute(query, (f"%{mountain_name}%",))
+            rules = cursor.fetchall()
+        conn.close()
+        return rules
+    except Exception as e:
+        print(f"Error fetching rules for {mountain_name}: {e}")
         return []
 
 

@@ -17,6 +17,7 @@ from database import (
     fetch_trails_data,
 )
 from gemini_engine import get_gemini_response
+from static_faq import get_static_response
 
 
 # Create Blueprint
@@ -61,6 +62,20 @@ def chat():
         if role not in ('pendaki', 'admin', 'penjaga'):
             role = 'pendaki'
         
+        # =======================================================
+        # LAYER 1: STATIC FAQ FILTER (hanya untuk role pendaki)
+        # =======================================================
+        if role == 'pendaki':
+            static_response = get_static_response(user_message)
+            if static_response:
+                print(f"[LOG] [Static FAQ] Intent: '{static_response['intent']}' | Pesan: '{user_message}'")
+                return jsonify(static_response)
+
+        # =======================================================
+        # LAYER 2: GEMINI API FALLBACK (DENGAN RAG CONTEXT)
+        # =======================================================
+        print(f"[LOG] [Gemini API] Fallback dipicu | Role: '{role}' | Pesan: '{user_message}'")
+
         # Get response from Gemini
         response = get_gemini_response(
             user_message,
@@ -72,6 +87,11 @@ def chat():
             auth_token=auth_token,
         )
         
+        # Tambahkan metadata pada response Gemini agar struktur konsisten
+        response.setdefault('source', 'gemini_api')
+        response.setdefault('intent', 'fallback_to_gemini')
+        response.setdefault('type', 'text')
+
         return jsonify(response)
         
     except Exception as e:

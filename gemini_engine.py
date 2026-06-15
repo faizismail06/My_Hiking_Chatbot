@@ -186,8 +186,8 @@ FITUR PEMESANAN TIKET:
     - Jika user memilih nomor urut (contoh: pilih nomor 3), pahami itu sebagai item urutan ke-3 lalu konversi ke ID internal menggunakan mapping INTERNAL_ONLY_MAPPINGS.
     - Dilarang menampilkan teks INTERNAL_ONLY_MAPPINGS atau ID internal ke user.
 - Langkah-langkah pemesanan:
-    1. Tanyakan gunung mana yang ingin didaki (tampilkan pilihan bernomor, tanpa ID)
-    2. Tanyakan jalur mana yang ingin dipilih (tampilkan pilihan bernomor, tanpa ID)
+    1. Tanyakan gunung mana yang ingin didaki (jangan tampilkan pilihan bernomor / teks daftar gunung, karena aplikasi akan otomatis merendernya sebagai kartu gunung)
+    2. Tanyakan jalur mana yang ingin dipilih (jangan tampilkan pilihan bernomor / teks daftar jalur, karena aplikasi akan otomatis merendernya sebagai kartu jalur)
     3. Tanyakan tanggal pendakian. Jika user bilang "besok", "lusa", atau sebutan umum, konversi ke format YYYY-MM-DD berdasarkan tanggal hari ini.
     4. WAJIB tanyakan TIPE PENDAKIAN ke user:
        - "Apakah pendakiannya tektok (naik turun di hari yang sama) atau ngecamp?"
@@ -484,11 +484,32 @@ def get_gemini_response(
         # Build chat history
         chat_messages = []
         if conversation_history:
+            current_role = None
+            current_parts = []
+            
             for msg in conversation_history:
                 msg_role = "user" if msg.get('isUser', True) else "model"
+                msg_text = msg.get('message', '').strip()
+                if not msg_text:
+                    continue
+                
+                if current_role is None:
+                    current_role = msg_role
+                    current_parts = [msg_text]
+                elif msg_role == current_role:
+                    current_parts.append(msg_text)
+                else:
+                    chat_messages.append({
+                        "role": current_role,
+                        "parts": ["\n\n".join(current_parts)]
+                    })
+                    current_role = msg_role
+                    current_parts = [msg_text]
+            
+            if current_role is not None and current_parts:
                 chat_messages.append({
-                    "role": msg_role,
-                    "parts": [msg.get('message', '')]
+                    "role": current_role,
+                    "parts": ["\n\n".join(current_parts)]
                 })
         
         # Start chat
@@ -573,6 +594,60 @@ def get_gemini_response(
             'message': final_text,
         }
         
+        # Dynamic mountain card matching logic (for mountains and trails/routes queries)
+        from database import fetch_mountains_data, fetch_trails_data
+        try:
+            mentioned_mountains = []
+            user_msg_lower = user_message.lower()
+            resp_text_lower = final_text.lower()
+            
+            # General keywords check for both mountains and trails/routes
+            is_general_query = any(kw in user_msg_lower for kw in [
+                "ada berapa gunung", "daftar gunung", "tampilkan gunung", "gunung apa saja", "gunung yang tersedia",
+                "ada berapa jalur", "daftar jalur", "tampilkan jalur", "jalur apa saja", "jalur yang tersedia",
+                "ada rute apa saja", "rute yang tersedia"
+            ])
+            
+            all_mountains = fetch_mountains_data()
+            all_trails = fetch_trails_data()
+            
+            matched_mountain_ids = set()
+            
+            # Match mountains directly by name
+            for m in all_mountains:
+                name_lower = m['nama'].lower()
+                clean_name = name_lower.replace("gunung ", "").strip()
+                
+                if is_general_query or name_lower in user_msg_lower or name_lower in resp_text_lower or (len(clean_name) > 3 and (clean_name in user_msg_lower or clean_name in resp_text_lower)):
+                    matched_mountain_ids.add(m['id'])
+            
+            # Match mountains indirectly by mentioned trail names
+            for t in all_trails:
+                trail_name_lower = t['nama_jalur'].lower()
+                clean_trail_name = trail_name_lower.replace("jalur ", "").strip()
+                
+                if (trail_name_lower in user_msg_lower or trail_name_lower in resp_text_lower or 
+                    (len(clean_trail_name) > 3 and (clean_trail_name in user_msg_lower or clean_trail_name in resp_text_lower))):
+                    if t.get('id_gunung'):
+                        matched_mountain_ids.add(t['id_gunung'])
+            
+            # Build final metadata for matched mountains
+            for m in all_mountains:
+                if m['id'] in matched_mountain_ids:
+                    mentioned_mountains.append({
+                        'id': m['id'],
+                        'nama': m['nama'],
+                        'ketinggian': m['ketinggian'],
+                        'deskripsi': m['deskripsi'],
+                        'gambar_gunung': m.get('gambar_gunung', ''),
+                        'provinsi': m.get('provinsi', 'Jawa Tengah'),
+                    })
+            
+            if mentioned_mountains:
+                result['mountains'] = mentioned_mountains
+        except Exception as ex:
+            print(f"Error extracting mentioned mountains: {ex}")
+            
         if download_url:
             result['download_url'] = download_url
         
@@ -588,6 +663,148 @@ def get_gemini_response(
         if hasattr(get_gemini_response, '_last_transaction_id') and get_gemini_response._last_transaction_id:
             result['transaction_id'] = get_gemini_response._last_transaction_id
             get_gemini_response._last_transaction_id = None
+        
+        # Override to display route cards during booking flows
+        try:
+            is_booking = False
+            primary_keywords = ["pesan tiket", "pesan tiker", "booking", "book tiket", "beli tiket", "order tiket", "pesan tempat", "pesan kuota", "create_booking"]
+            step_keywords = ["detail pesanan", "ringkasan pesanan", "total biaya", "biaya per orang", "jumlah pendaki", "tektok atau ngecamp", "tanggal pendakian", "tanggal naik", "tanggal turun", "apakah detail", "apakah ringkasan", "proses pemesanan", "proses booking"]
+            
+            if any(kw in user_message.lower() for kw in primary_keywords + step_keywords):
+                is_booking = True
+            elif any(kw in final_text.lower() for kw in primary_keywords + step_keywords):
+                is_booking = True
+            elif conversation_history:
+                for msg in reversed(conversation_history[-10:]):
+                    msg_text = msg.get('message', '')
+                    if msg_text and any(kw in msg_text.lower() for kw in primary_keywords):
+                        is_booking = True
+                        break
+
+            if is_booking and role == 'pendaki':
+                from static_faq import normalize_text, extract_mountain_name, extract_route_name
+                from database import fetch_mountains_data, fetch_routes_by_mountain_name, fetch_route_detail
+                
+                all_mountains = fetch_mountains_data()
+                matched_mountain = None
+                matched_route = None
+                
+                texts_to_search = [final_text, user_message]
+                if conversation_history:
+                    for msg in reversed(conversation_history):
+                        msg_text = msg.get('message', '')
+                        if msg_text:
+                            texts_to_search.append(msg_text)
+                
+                for text in texts_to_search:
+                    norm_text = normalize_text(text)
+                    mountain_name = extract_mountain_name(norm_text, all_mountains)
+                    if mountain_name:
+                        matched_mountain = mountain_name
+                        break
+                
+                if matched_mountain:
+                    routes = fetch_routes_by_mountain_name(matched_mountain)
+                    for text in texts_to_search:
+                        norm_text = normalize_text(text)
+                        
+                        # Count how many routes of this mountain are mentioned in this text
+                        mentioned_routes = []
+                        for r in routes:
+                            r_name_lower = r['nama_jalur'].lower().replace("via", "").replace("jalur", "").strip()
+                            if r_name_lower in norm_text:
+                                mentioned_routes.append(r['nama_jalur'])
+                        
+                        # If exactly one route is mentioned in the text, it's a selected/confirmed route.
+                        # Multiple routes indicates a list/choices text, which we ignore.
+                        if len(mentioned_routes) == 1:
+                            matched_route = mentioned_routes[0]
+                            break
+                
+                if matched_mountain:
+                    FALLBACK_IMAGE = "assets/images/img_error.png"
+                    
+                    if matched_route:
+                        # Case 2: Specific route chosen -> Show this route card without Pesan Tiket button
+                        r = fetch_route_detail(matched_mountain, matched_route)
+                        if r:
+                            basecamp_parts = []
+                            if r.get('desa'):
+                                basecamp_parts.append(r['desa'])
+                            if r.get('kecamatan'):
+                                basecamp_parts.append(r['kecamatan'])
+                            if r.get('kabupaten'):
+                                basecamp_parts.append(r['kabupaten'])
+                            basecamp_str = ", ".join(basecamp_parts) if basecamp_parts else "Tidak tersedia"
+
+                            estimasi = f"{r['estimasi_waktu']} jam" if r.get('estimasi_waktu') else "Belum tersedia"
+                            
+                            route_data = {
+                                "id": r["id"],
+                                "id_gunung": r["id_gunung"],
+                                "nama_jalur": r["nama_jalur"],
+                                "jarak": float(r["jarak"]) if r.get("jarak") else 0,
+                                "biaya": int(r["biaya"]) if r.get("biaya") else 0,
+                                "estimasi_waktu": estimasi,
+                                "tingkat_kesulitan": r.get("tingkat_kesulitan") or "Belum dikategorikan",
+                                "deskripsi": r.get("deskripsi") or "",
+                                "basecamp": f"Basecamp {basecamp_str}",
+                                "gambar_jalur": r.get("gambar_jalur") or FALLBACK_IMAGE,
+                                "buttons": []  # Empty buttons array to hide Pesan Tiket button
+                            }
+                            
+                            result['type'] = 'route_cards'
+                            result['data'] = {
+                                "mountain_name": r["nama_gunung"],
+                                "routes": [route_data]
+                            }
+                            # Remove mountain cards to avoid overlap
+                            result.pop('mountains', None)
+                    else:
+                        # Case 1: Mountain chosen but route not chosen -> Show list of route cards with Pesan Tiket button
+                        routes = fetch_routes_by_mountain_name(matched_mountain)
+                        if routes:
+                            routes_list = []
+                            for r in routes:
+                                basecamp_parts = []
+                                if r.get('desa'):
+                                    basecamp_parts.append(r['desa'])
+                                if r.get('kecamatan'):
+                                    basecamp_parts.append(r['kecamatan'])
+                                if r.get('kabupaten'):
+                                    basecamp_parts.append(r['kabupaten'])
+                                basecamp_str = ", ".join(basecamp_parts) if basecamp_parts else "Tidak tersedia"
+
+                                estimasi = f"{r['estimasi_waktu']} jam" if r.get('estimasi_waktu') else "Belum tersedia"
+
+                                routes_list.append({
+                                    "id": r["id"],
+                                    "id_gunung": r["id_gunung"],
+                                    "nama_jalur": r["nama_jalur"],
+                                    "jarak": float(r["jarak"]) if r.get("jarak") else 0,
+                                    "biaya": int(r["biaya"]) if r.get("biaya") else 0,
+                                    "estimasi_waktu": estimasi,
+                                    "tingkat_kesulitan": r.get("tingkat_kesulitan") or "Belum dikategorikan",
+                                    "deskripsi": r.get("deskripsi") or "",
+                                    "basecamp": f"Basecamp {basecamp_str}",
+                                    "gambar_jalur": r.get("gambar_jalur") or FALLBACK_IMAGE,
+                                    "buttons": [
+                                        {"label": "Pesan Tiket", "payload": f"Pesan tiket {r['nama_gunung']} {r['nama_jalur']}"}
+                                    ]
+                                })
+                            
+                            result['type'] = 'route_cards'
+                            result['data'] = {
+                                "mountain_name": matched_mountain,
+                                "routes": routes_list
+                            }
+                            # Remove mountain cards to avoid overlap
+                            result.pop('mountains', None)
+                            
+                            # Override text response to show only the prompt to select a route card
+                            result['message'] = f"{matched_mountain} memiliki beberapa jalur pendakian. Mohon pilih salah satu jalur di bawah ini:"
+        except Exception as override_ex:
+            print(f"Error in booking route card override: {override_ex}")
         
         return result
         
