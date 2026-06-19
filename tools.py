@@ -201,6 +201,7 @@ def tool_create_booking(
     tanggal_turun,
     anggota_ids=None,
     auth_token=None,
+    force_continue=False,
 ):
     """Membuat booking + transaksi + pembayaran Midtrans sekaligus"""
     try:
@@ -262,6 +263,7 @@ def tool_create_booking(
                 "tanggal_turun": tanggal_turun,
                 "total_harga_tiket": total_harga,
                 "anggota_ids": anggota_clean,
+                "force_continue": force_continue,
             },
             headers=_laravel_json_headers(auth_token),
             timeout=10

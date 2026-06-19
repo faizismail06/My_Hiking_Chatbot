@@ -52,6 +52,10 @@ def get_tools_for_role(role):
                                 items=genai.protos.Schema(type=genai.protos.Type.INTEGER),
                                 description="Daftar ID teman/anggota tambahan (opsional)"
                             ),
+                            "force_continue": genai.protos.Schema(
+                                type=genai.protos.Type.BOOLEAN,
+                                description="Set ke true jika user mengkonfirmasi 'ya', 'yakin', atau 'lanjutkan' setelah menerima respon HIGH_RISK_CONFIRMATION_REQUIRED dari pemanggilan create_booking sebelumnya. Default adalah false."
+                            ),
                         },
                         required=["id_gunung", "id_jalur", "tanggal_naik", "tanggal_turun"]
                     )
@@ -206,6 +210,7 @@ FITUR PEMESANAN TIKET:
        Lalu tanyakan: "Apakah detail pesanan di atas sudah benar? Jika ya, saya akan proses pemesanannya."
     7. HANYA jika user setuju/konfirmasi, panggil fungsi create_booking dengan parameter yang sesuai (termasuk tanggal_turun dan anggota_ids jika ada)
 - Setelah booking berhasil, pembayaran Midtrans akan otomatis disiapkan. Sampaikan ke user untuk klik tombol Bayar Sekarang.
+- Jika panggilan fungsi create_booking mengembalikan error code HIGH_RISK_CONFIRMATION_REQUIRED, kamu harus memberitahukan kepada user bahwa jalur tersebut berisiko tinggi bagi tingkat pengalamannya dan tanyakan secara eksplisit apakah user yakin ingin melanjutkan. Jika user menjawab YA atau YAKIN, panggil kembali create_booking dengan parameter force_continue bernilai true.
 - PENTING: Selalu konfirmasi dulu sebelum membuat booking. Jangan langsung membuat booking tanpa konfirmasi.
 - PENTING: Jangan pernah melewati langkah tanya tektok/camping. Selalu tanyakan tipe pendakian.
 - Gunakan ID gunung dan ID jalur INTERNAL dari mapping (BUKAN menampilkan ID ke user)
@@ -364,6 +369,7 @@ def process_function_call(
             tanggal_turun=args.get('tanggal_turun'),
             anggota_ids=anggota_ids,
             auth_token=auth_token,
+            force_continue=args.get('force_continue', False),
         )
         # Store payment_url for the response
         if result.get('payment_url'):
