@@ -749,6 +749,7 @@ def get_gemini_response(
                                 "tingkat_kesulitan": r.get("tingkat_kesulitan") or "Belum dikategorikan",
                                 "deskripsi": r.get("deskripsi") or "",
                                 "basecamp": f"Basecamp {basecamp_str}",
+                                "provinsi": r.get("provinsi") or "Jawa Tengah",
                                 "gambar_jalur": r.get("gambar_jalur") or FALLBACK_IMAGE,
                                 "buttons": []  # Empty buttons array to hide Pesan Tiket button
                             }
@@ -787,6 +788,7 @@ def get_gemini_response(
                                     "tingkat_kesulitan": r.get("tingkat_kesulitan") or "Belum dikategorikan",
                                     "deskripsi": r.get("deskripsi") or "",
                                     "basecamp": f"Basecamp {basecamp_str}",
+                                    "provinsi": r.get("provinsi") or "Jawa Tengah",
                                     "gambar_jalur": r.get("gambar_jalur") or FALLBACK_IMAGE,
                                     "buttons": [
                                         {"label": "Pesan Tiket", "payload": f"Pesan tiket {r['nama_gunung']} {r['nama_jalur']}"}

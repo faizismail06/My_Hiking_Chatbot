@@ -168,6 +168,7 @@ def get_static_response(user_message):
                                 "tingkat_kesulitan": detail.get("tingkat_kesulitan") or "Belum dikategorikan",
                                 "deskripsi": detail.get("deskripsi") or "",
                                 "basecamp": f"Basecamp {basecamp_str}",
+                                "provinsi": detail.get("provinsi") or "Jawa Tengah",
                                 "gambar_jalur": detail.get("gambar_jalur") or FALLBACK_IMAGE,
                                 "buttons": [
                                     {"label": "Pesan Tiket", "payload": f"Pesan tiket {detail['nama_gunung']} {detail['nama_jalur']}"}
@@ -200,6 +201,7 @@ def get_static_response(user_message):
                     "tingkat_kesulitan": r.get("tingkat_kesulitan") or "Belum dikategorikan",
                     "deskripsi": r.get("deskripsi") or "",
                     "basecamp": f"Basecamp {basecamp_str}",
+                    "provinsi": r.get("provinsi") or "Jawa Tengah",
                     "gambar_jalur": r.get("gambar_jalur") or FALLBACK_IMAGE,
                     "buttons": [
                         {"label": "Detail Jalur", "payload": f"Detail jalur {r['nama_gunung']} {r['nama_jalur']}"},
