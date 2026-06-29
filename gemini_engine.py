@@ -589,8 +589,16 @@ def get_gemini_response(
             
             iteration += 1
         
-        # Extract final text response
-        final_text = response.text if response.text else "Permintaan telah diproses."
+        # Extract final text response safely
+        final_text = "Permintaan telah diproses."
+        try:
+            if response.candidates and len(response.candidates) > 0:
+                candidate = response.candidates[0]
+                if candidate.content and candidate.content.parts:
+                    if any(part.text for part in candidate.content.parts):
+                        final_text = response.text
+        except (ValueError, AttributeError, IndexError):
+            pass
         
         # Clean markdown formatting from response
         final_text = clean_markdown(final_text)

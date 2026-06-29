@@ -72,8 +72,10 @@ def get_static_response(user_message):
     is_refund_query = any(k in normalized for k in ["cancel", "batal", "refund", "pembatalan", "batalin", "uang kembali"])
     if not is_refund_query:
         if any(k in normalized for k in [
-            "pesan tiket", "pesan tiker", "booking", "book tiket",
-            "beli tiket", "order tiket", "pesan tempat", "pesan kuota"
+            "pesan tiket", "pesan tiker", "pesen tiket", "pesen tiker",
+            "oesan tiket", "oesan tiker", "booking", "book tiket",
+            "beli tiket", "order tiket", "pesan tempat", "pesan kuota",
+            "pesan", "pesen", "oesan"
         ]):
             return None
 
