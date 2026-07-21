@@ -48,6 +48,7 @@ def fetch_mountains_data():
         with conn.cursor() as cursor:
             query = """
                 SELECT m.id, m.nama, m.deskripsi, m.ketinggian, m.latitude, m.longitude, m.gambar_gunung,
+                       m.province_id, m.regency_id, m.district_id, m.village_id,
                        p.name as provinsi, r.name as kabupaten, d.name as kecamatan, v.name as desa
                 FROM mountains m
                 LEFT JOIN reg_provinces p ON m.province_id = p.id
@@ -71,6 +72,7 @@ def fetch_trails_data():
         with conn.cursor() as cursor:
             query = """
                 SELECT r.id, r.nama as nama_jalur, r.jarak, r.deskripsi, r.biaya, r.latitude, r.longitude,
+                       r.province_id, r.regency_id, r.district_id, r.village_id,
                        m.nama as nama_gunung, m.id as id_gunung, m.ketinggian,
                        p.name as provinsi, rg.name as kabupaten, d.name as kecamatan, v.name as desa
                 FROM routes r

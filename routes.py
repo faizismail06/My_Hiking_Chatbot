@@ -62,18 +62,14 @@ def chat():
         if role not in ('pendaki', 'admin', 'penjaga'):
             role = 'pendaki'
         
-        # =======================================================
-        # LAYER 1: STATIC FAQ FILTER (hanya untuk role pendaki)
-        # =======================================================
+  
         if role == 'pendaki':
             static_response = get_static_response(user_message)
             if static_response:
                 print(f"[LOG] [Static FAQ] Intent: '{static_response['intent']}' | Pesan: '{user_message}'")
                 return jsonify(static_response)
 
-        # =======================================================
-        # LAYER 2: GEMINI API FALLBACK (DENGAN RAG CONTEXT)
-        # =======================================================
+        
         print(f"[LOG] [Gemini API] Fallback dipicu | Role: '{role}' | Pesan: '{user_message}'")
 
         # Get response from Gemini

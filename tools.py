@@ -586,6 +586,15 @@ def tool_export_excel(data_type, role):
 def tool_crud_mountain(action, data=None):
     """CRUD operasi untuk gunung via API Laravel"""
     try:
+        if isinstance(data, str):
+            try:
+                data = json.loads(data)
+            except Exception:
+                pass
+        
+        if not isinstance(data, dict):
+            data = {}
+
         if action == "list":
             mountains = fetch_mountains_data()
             return {"success": True, "data": mountains, "total": len(mountains)}
@@ -639,6 +648,15 @@ def tool_crud_mountain(action, data=None):
 def tool_crud_trail(action, data=None):
     """CRUD operasi untuk jalur via API Laravel"""
     try:
+        if isinstance(data, str):
+            try:
+                data = json.loads(data)
+            except Exception:
+                pass
+        
+        if not isinstance(data, dict):
+            data = {}
+
         if action == "list":
             trails = fetch_trails_data()
             return {"success": True, "data": trails, "total": len(trails)}

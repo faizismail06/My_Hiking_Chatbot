@@ -14,6 +14,7 @@ Tujuan:
 import re
 from database import (
     fetch_mountains_data,
+    fetch_trails_data,
     fetch_routes_by_mountain_name,
     fetch_route_detail,
     fetch_rules_by_mountain,
@@ -34,27 +35,67 @@ def normalize_text(text):
 
 
 def extract_mountain_name(normalized_text, all_mountains):
-    """Mengekstraksi nama gunung yang ada di dalam database dari input user"""
+    """Mengekstraksi nama gunung yang ada di dalam database dari input user.
+    Menggunakan regex boundary (\b) untuk mencegah pencocokan substring parsial.
+    """
     for m in all_mountains:
         name_lower = m['nama'].lower()
         clean_name = name_lower.replace("gunung ", "").strip()
 
-        # Cek jika nama lengkap atau nama pendek gunung ada di teks
-        if name_lower in normalized_text or clean_name in normalized_text:
+        if name_lower in normalized_text or re.search(rf'\b{re.escape(clean_name)}\b', normalized_text):
             return m['nama']
     return None
 
 
 def extract_route_name(normalized_text, routes):
     """Mengekstraksi nama jalur pendakian dari input user"""
-    # Bersihkan input dari kata-kata umum
     clean_text = normalized_text.replace("via", "").replace("jalur", "").strip()
 
     for r in routes:
         trail_name_lower = r['nama_jalur'].lower().replace("via", "").replace("jalur", "").strip()
-        if trail_name_lower in clean_text:
+        if re.search(rf'\b{re.escape(trail_name_lower)}\b', clean_text):
             return r['nama_jalur']
     return None
+
+
+def _build_route_detail_response(detail):
+    """Helper merakit response kartu detail rute"""
+    basecamp_parts = []
+    if detail.get('desa'):
+        basecamp_parts.append(detail['desa'])
+    if detail.get('kecamatan'):
+        basecamp_parts.append(detail['kecamatan'])
+    if detail.get('kabupaten'):
+        basecamp_parts.append(detail['kabupaten'])
+    basecamp_str = ", ".join(basecamp_parts) if basecamp_parts else "Tidak tersedia"
+    estimasi = f"{detail['estimasi_waktu']} jam" if detail.get('estimasi_waktu') else "Belum tersedia"
+
+    return {
+        "success": True,
+        "source": "static_faq",
+        "intent": "route_detail",
+        "type": "route_cards",
+        "message": f"Ini dia info lengkap jalur {detail['nama_gunung']} {detail['nama_jalur']}! Langsung pesan tiket kalau kamu tertarik ya.",
+        "data": {
+            "mountain_name": detail["nama_gunung"],
+            "routes": [{
+                "id": detail["id"],
+                "id_gunung": detail["id_gunung"],
+                "nama_jalur": detail["nama_jalur"],
+                "jarak": float(detail["jarak"]) if detail.get("jarak") else 0,
+                "biaya": int(detail["biaya"]) if detail.get("biaya") else 0,
+                "estimasi_waktu": estimasi,
+                "tingkat_kesulitan": detail.get("tingkat_kesulitan") or "Belum dikategorikan",
+                "deskripsi": detail.get("deskripsi") or "",
+                "basecamp": f"Basecamp {basecamp_str}",
+                "provinsi": detail.get("provinsi") or "Jawa Tengah",
+                "gambar_jalur": detail.get("gambar_jalur") or FALLBACK_IMAGE,
+                "buttons": [
+                    {"label": "Pesan Tiket", "payload": f"Pesan tiket {detail['nama_gunung']} {detail['nama_jalur']}"}
+                ]
+            }]
+        }
+    }
 
 
 def get_static_response(user_message):
@@ -80,14 +121,14 @@ def get_static_response(user_message):
             return None
 
     all_mountains = fetch_mountains_data()
-
-    # Ekstraksi nama gunung dari pesan (digunakan di beberapa intent)
     extracted_mountain = extract_mountain_name(normalized, all_mountains)
 
     # ===================================================================
     # 1. INTENT: list_mountains
     # ===================================================================
-    if any(k in normalized for k in [
+    # Jangan tangkap jika user menanyakan rekomendasi (misal: "gunung apa saja yang cocok untuk pemula")
+    is_recommendation = any(k in normalized for k in ["pemula", "rekomendasi", "cocok", "terbaik", "mudah", "sulit"])
+    if not is_recommendation and any(k in normalized for k in [
         "ada gunung apa saja", "daftar gunung", "tampilkan gunung",
         "gunung yang tersedia", "pilihan gunung", "gunung apa saja",
         "ada berapa gunung", "list gunung", "gunung tersedia"
@@ -124,7 +165,7 @@ def get_static_response(user_message):
         "jalur tersedia", "rute pendakian", "ada rute apa"
     ])
 
-    if is_route_query or extracted_mountain:
+    if is_route_query:
         if extracted_mountain:
             routes = fetch_routes_by_mountain_name(extracted_mountain)
             if not routes:
@@ -136,48 +177,12 @@ def get_static_response(user_message):
                     "message": f"Waduh, saat ini belum ada jalur pendakian aktif yang terdaftar untuk {extracted_mountain} di database kami. Coba cek gunung lainnya ya!"
                 }
 
-            # Cek jika menanyakan detail jalur spesifik
+            # Cek jika menanyakan detail jalur spesifik (misal: Jalur Selo)
             extracted_route = extract_route_name(normalized, routes)
             if extracted_route:
                 detail = fetch_route_detail(extracted_mountain, extracted_route)
                 if detail:
-                    basecamp_parts = []
-                    if detail.get('desa'):
-                        basecamp_parts.append(detail['desa'])
-                    if detail.get('kecamatan'):
-                        basecamp_parts.append(detail['kecamatan'])
-                    if detail.get('kabupaten'):
-                        basecamp_parts.append(detail['kabupaten'])
-                    basecamp_str = ", ".join(basecamp_parts) if basecamp_parts else "Tidak tersedia"
-
-                    estimasi = f"{detail['estimasi_waktu']} jam" if detail.get('estimasi_waktu') else "Belum tersedia"
-
-                    return {
-                        "success": True,
-                        "source": "static_faq",
-                        "intent": "route_detail",
-                        "type": "route_cards",
-                        "message": f"Ini dia info lengkap jalur {detail['nama_gunung']} {detail['nama_jalur']}! Langsung pesan tiket kalau kamu tertarik ya.",
-                        "data": {
-                            "mountain_name": detail["nama_gunung"],
-                            "routes": [{
-                                "id": detail["id"],
-                                "id_gunung": detail["id_gunung"],
-                                "nama_jalur": detail["nama_jalur"],
-                                "jarak": float(detail["jarak"]) if detail.get("jarak") else 0,
-                                "biaya": int(detail["biaya"]) if detail.get("biaya") else 0,
-                                "estimasi_waktu": estimasi,
-                                "tingkat_kesulitan": detail.get("tingkat_kesulitan") or "Belum dikategorikan",
-                                "deskripsi": detail.get("deskripsi") or "",
-                                "basecamp": f"Basecamp {basecamp_str}",
-                                "provinsi": detail.get("provinsi") or "Jawa Tengah",
-                                "gambar_jalur": detail.get("gambar_jalur") or FALLBACK_IMAGE,
-                                "buttons": [
-                                    {"label": "Pesan Tiket", "payload": f"Pesan tiket {detail['nama_gunung']} {detail['nama_jalur']}"}
-                                ]
-                            }]
-                        }
-                    }
+                    return _build_route_detail_response(detail)
 
             # Jika tidak ada rute spesifik yang dicocokkan, tampilkan semua jalur gunung tersebut
             routes_list = []
@@ -190,7 +195,6 @@ def get_static_response(user_message):
                 if r.get('kabupaten'):
                     basecamp_parts.append(r['kabupaten'])
                 basecamp_str = ", ".join(basecamp_parts) if basecamp_parts else "Tidak tersedia"
-
                 estimasi = f"{r['estimasi_waktu']} jam" if r.get('estimasi_waktu') else "Belum tersedia"
 
                 routes_list.append({
@@ -223,8 +227,21 @@ def get_static_response(user_message):
                 }
             }
         else:
-            # User bertanya tentang jalur tapi tidak menyebutkan nama gunung
-            # Tampilkan daftar gunung agar user memilih gunung terlebih dahulu
+            # Jika gunung tidak terdeteksi di teks, cek apakah user menyebut nama jalur spesifik (misal: "Berapa biaya jalur Selo?")
+            all_trails = fetch_trails_data()
+            matched_trail = None
+            for t in all_trails:
+                trail_clean = t['nama_jalur'].lower().replace("via", "").replace("jalur", "").strip()
+                if re.search(rf'\b{re.escape(trail_clean)}\b', normalized):
+                    matched_trail = t
+                    break
+
+            if matched_trail:
+                detail = fetch_route_detail(matched_trail['nama_gunung'], matched_trail['nama_jalur'])
+                if detail:
+                    return _build_route_detail_response(detail)
+
+            # Jika tidak ada nama gunung maupun nama jalur spesifik, tampilkan kartu gunung untuk dipilih
             mountains_list = []
             for m in all_mountains:
                 mountains_list.append({
@@ -324,9 +341,11 @@ def get_static_response(user_message):
             "message": "CARA BAYAR LEWAT MINIMARKET (ALFAMART / INDOMARET):\n\n1. Pilih opsi pembayaran 'Alfamart' atau 'Indomaret' saat checkout tiket.\n2. Catat atau screenshot 'Kode Pembayaran' yang ditampilkan di layar.\n3. Datang ke gerai Alfamart atau Indomaret terdekat, sampaikan ke kasir bahwa kamu ingin melakukan pembayaran merchant Midtrans atau MyHiking.\n4. Tunjukkan kode pembayaran tersebut kepada kasir, dan selesaikan transaksi menggunakan uang tunai atau metode pembayaran yang diterima di kasir.\n5. Kasir akan memberikan struk fisik sebagai bukti pembayaran sah. Simpan struk tersebut ya!"
         }
 
+    # Memicu informasi opsi metode pembayaran (Gunakan frasa spesifik alih-alih kata "bayar" tunggal agar tidak bentrok dengan pertanyaan biaya)
     if any(k in normalized for k in [
-        "bayar", "metode pembayaran", "pembayaran", "midtrans",
-        "cara bayar", "bayarnya lewat apa", "bisa pakai ewallet"
+        "metode pembayaran", "pembayaran", "midtrans",
+        "cara bayar", "bayarnya lewat apa", "bisa pakai ewallet",
+        "metode bayar", "opsi bayar", "sistem bayar"
     ]):
         return {
             "success": True,
@@ -346,11 +365,13 @@ def get_static_response(user_message):
     # ===================================================================
     # 6. INTENT: emergency_guide
     # ===================================================================
-    is_emergency = any(k in normalized for k in [
+    # Jangan pemicu emergency protocol jika query tentang laporan/rekap SAR (misal oleh Admin/Penjaga)
+    is_report_query = any(k in normalized for k in ["laporan", "dashboard", "rekap", "export", "excel", "unduh", "download"])
+    is_emergency = not is_report_query and (any(k in normalized for k in [
         "tersesat", "tim sar", "pos sar", "panic button", "darurat",
         "butuh bantuan", "kecelakaan", "sakit di gunung",
         "cara pakai panic", "tombol darurat", "evakuasi"
-    ]) or " sar " in f" {normalized} "
+    ]) or " sar " in f" {normalized} ")
 
     if is_emergency:
         return {
