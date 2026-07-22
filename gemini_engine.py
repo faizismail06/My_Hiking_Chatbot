@@ -524,53 +524,71 @@ def get_gemini_response(
         selected_member_names=normalized_selected_member_names,
     )
     
-    try:
-        # Get tools for role
-        tools = get_tools_for_role(role)
+    # Get tools for role
+    tools = get_tools_for_role(role)
 
-        # Initialize model with tools
-        model = genai.GenerativeModel(
-            'gemini-2.5-flash',
-            tools=tools,
-            system_instruction=system_prompt,
-        )
+    # List kandidat model resmi yang aktif dan didukung di Google Generative AI
+    candidate_models = [
+        'gemini-2.5-flash',
+        'gemini-flash-latest',
+        'gemini-2.0-flash',
+    ]
+
+    # Build chat history
+    chat_messages = []
+    if conversation_history:
+        current_role = None
+        current_parts = []
         
-        # Build chat history
-        chat_messages = []
-        if conversation_history:
-            current_role = None
-            current_parts = []
+        for msg in conversation_history:
+            msg_role = "user" if msg.get('isUser', True) else "model"
+            msg_text = msg.get('message', '').strip()
+            if not msg_text:
+                continue
             
-            for msg in conversation_history:
-                msg_role = "user" if msg.get('isUser', True) else "model"
-                msg_text = msg.get('message', '').strip()
-                if not msg_text:
-                    continue
-                
-                if current_role is None:
-                    current_role = msg_role
-                    current_parts = [msg_text]
-                elif msg_role == current_role:
-                    current_parts.append(msg_text)
-                else:
-                    chat_messages.append({
-                        "role": current_role,
-                        "parts": ["\n\n".join(current_parts)]
-                    })
-                    current_role = msg_role
-                    current_parts = [msg_text]
-            
-            if current_role is not None and current_parts:
+            if current_role is None:
+                current_role = msg_role
+                current_parts = [msg_text]
+            elif msg_role == current_role:
+                current_parts.append(msg_text)
+            else:
                 chat_messages.append({
                     "role": current_role,
                     "parts": ["\n\n".join(current_parts)]
                 })
+                current_role = msg_role
+                current_parts = [msg_text]
         
-        # Start chat
-        chat = model.start_chat(history=chat_messages)
+        if current_role is not None and current_parts:
+            chat_messages.append({
+                "role": current_role,
+                "parts": ["\n\n".join(current_parts)]
+            })
+
+    try:
+        response = None
+        last_error = None
         
-        # Send message
-        response = chat.send_message(user_message)
+        for model_name in candidate_models:
+            try:
+                model = genai.GenerativeModel(
+                    model_name,
+                    tools=tools,
+                    system_instruction=system_prompt,
+                )
+                chat = model.start_chat(history=chat_messages)
+                response = chat.send_message(user_message)
+                if response:
+                    print(f"[LOG] Gemini Model berhasil digunakan: '{model_name}'")
+                    break
+            except Exception as e:
+                print(f"[Warning] Model '{model_name}' gagal/limit ({e}). Mencoba kandidat berikutnya...")
+                last_error = e
+        
+        if not response:
+            if last_error:
+                raise last_error
+            raise RuntimeError("Tidak ada model Gemini yang memberikan respon valid.")
         
         # Check for function calls
         download_url = None
