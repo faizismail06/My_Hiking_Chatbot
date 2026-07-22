@@ -598,6 +598,8 @@ def tool_crud_mountain(action, data=None):
             return {"success": True, "data": mountains, "total": len(mountains)}
         
         elif action == "create" and data:
+            name_val = data.get('nama') or data.get('nama_gunung')
+            name_str = f"Gunung {name_val}" if name_val else "Gunung baru"
             response = requests.post(
                 f"{LARAVEL_API_URL}/mountains",
                 json=data,
@@ -605,14 +607,24 @@ def tool_crud_mountain(action, data=None):
                 timeout=10
             )
             if response.status_code in (200, 201):
-                return {"success": True, "message": "Gunung berhasil ditambahkan", "data": response.json()}
+                return {"success": True, "message": f"{name_str} berhasil ditambahkan.", "data": response.json()}
             else:
-                return {"success": False, "message": f"Gagal: {response.json().get('message', response.text)}"}
+                return {"success": False, "message": f"Gagal menambahkan data: {response.json().get('message', response.text)}"}
         
         elif action == "update" and data:
             mountain_id = data.pop('id', None)
+            mountain_name = data.get('nama') or data.get('nama_gunung')
             if not mountain_id:
-                return {"success": False, "message": "ID gunung diperlukan untuk update"}
+                return {"success": False, "message": "Data gunung tidak ditemukan untuk diperbarui."}
+            
+            if not mountain_name:
+                mountains = fetch_mountains_data()
+                m = next((item for item in mountains if str(item['id']) == str(mountain_id)), None)
+                if m:
+                    mountain_name = m.get('nama')
+            
+            name_str = f"Gunung {mountain_name}" if mountain_name else "Data gunung"
+
             response = requests.put(
                 f"{LARAVEL_API_URL}/mountains/{mountain_id}",
                 json=data,
@@ -620,27 +632,33 @@ def tool_crud_mountain(action, data=None):
                 timeout=10
             )
             if response.status_code == 200:
-                return {"success": True, "message": f"Gunung ID {mountain_id} berhasil diupdate"}
+                return {"success": True, "message": f"{name_str} berhasil diperbarui."}
             else:
-                return {"success": False, "message": f"Gagal update: {response.json().get('message', response.text)}"}
+                return {"success": False, "message": f"Gagal memperbarui data: {response.json().get('message', response.text)}"}
         
         elif action == "delete" and data:
             mountain_id = data.get('id')
             if not mountain_id:
-                return {"success": False, "message": "ID gunung diperlukan untuk delete"}
+                return {"success": False, "message": "Data gunung tidak ditemukan untuk dihapus."}
+            
+            mountains = fetch_mountains_data()
+            m = next((item for item in mountains if str(item['id']) == str(mountain_id)), None)
+            mountain_name = m.get('nama') if m else None
+            name_str = f"Gunung {mountain_name}" if mountain_name else "Data gunung"
+
             response = requests.delete(
                 f"{LARAVEL_API_URL}/mountains/{mountain_id}",
                 headers=_laravel_json_headers(chatbot_crud=True),
                 timeout=10
             )
             if response.status_code in (200, 204):
-                return {"success": True, "message": f"Gunung ID {mountain_id} berhasil dihapus"}
+                return {"success": True, "message": f"{name_str} berhasil dihapus."}
             else:
-                return {"success": False, "message": f"Gagal hapus: {response.text}"}
+                return {"success": False, "message": f"Gagal menghapus data: {response.text}"}
         
-        return {"success": False, "message": f"Action '{action}' tidak valid"}
+        return {"success": False, "message": f"Aksi '{action}' tidak valid."}
     except Exception as e:
-        return {"success": False, "message": f"Error CRUD gunung: {str(e)}"}
+        return {"success": False, "message": f"Terjadi kesalahan saat memproses data gunung: {str(e)}"}
 
 
 def tool_crud_trail(action, data=None):
@@ -660,6 +678,8 @@ def tool_crud_trail(action, data=None):
             return {"success": True, "data": trails, "total": len(trails)}
         
         elif action == "create" and data:
+            name_val = data.get('nama') or data.get('nama_jalur')
+            name_str = f"Jalur {name_val}" if name_val else "Jalur baru"
             response = requests.post(
                 f"{LARAVEL_API_URL}/routes",
                 json=data,
@@ -667,14 +687,24 @@ def tool_crud_trail(action, data=None):
                 timeout=10
             )
             if response.status_code in (200, 201):
-                return {"success": True, "message": "Jalur berhasil ditambahkan", "data": response.json()}
+                return {"success": True, "message": f"{name_str} berhasil ditambahkan.", "data": response.json()}
             else:
-                return {"success": False, "message": f"Gagal: {response.json().get('message', response.text)}"}
+                return {"success": False, "message": f"Gagal menambahkan data: {response.json().get('message', response.text)}"}
         
         elif action == "update" and data:
             trail_id = data.pop('id', None)
+            trail_name = data.get('nama') or data.get('nama_jalur')
             if not trail_id:
-                return {"success": False, "message": "ID jalur diperlukan untuk update"}
+                return {"success": False, "message": "Data jalur tidak ditemukan untuk diperbarui."}
+            
+            if not trail_name:
+                trails = fetch_trails_data()
+                t = next((item for item in trails if str(item['id']) == str(trail_id)), None)
+                if t:
+                    trail_name = t.get('nama_jalur') or t.get('nama')
+            
+            name_str = f"Jalur {trail_name}" if trail_name else "Data jalur"
+
             response = requests.put(
                 f"{LARAVEL_API_URL}/routes/{trail_id}",
                 json=data,
@@ -682,24 +712,30 @@ def tool_crud_trail(action, data=None):
                 timeout=10
             )
             if response.status_code == 200:
-                return {"success": True, "message": f"Jalur ID {trail_id} berhasil diupdate"}
+                return {"success": True, "message": f"{name_str} berhasil diperbarui."}
             else:
-                return {"success": False, "message": f"Gagal update: {response.json().get('message', response.text)}"}
+                return {"success": False, "message": f"Gagal memperbarui data: {response.json().get('message', response.text)}"}
         
         elif action == "delete" and data:
             trail_id = data.get('id')
             if not trail_id:
-                return {"success": False, "message": "ID jalur diperlukan untuk delete"}
+                return {"success": False, "message": "Data jalur tidak ditemukan untuk dihapus."}
+            
+            trails = fetch_trails_data()
+            t = next((item for item in trails if str(item['id']) == str(trail_id)), None)
+            trail_name = t.get('nama_jalur') or t.get('nama') if t else None
+            name_str = f"Jalur {trail_name}" if trail_name else "Data jalur"
+
             response = requests.delete(
                 f"{LARAVEL_API_URL}/routes/{trail_id}",
                 headers=_laravel_json_headers(chatbot_crud=True),
                 timeout=10
             )
             if response.status_code in (200, 204):
-                return {"success": True, "message": f"Jalur ID {trail_id} berhasil dihapus"}
+                return {"success": True, "message": f"{name_str} berhasil dihapus."}
             else:
-                return {"success": False, "message": f"Gagal hapus: {response.text}"}
+                return {"success": False, "message": f"Gagal menghapus data: {response.text}"}
         
-        return {"success": False, "message": f"Action '{action}' tidak valid"}
+        return {"success": False, "message": f"Aksi '{action}' tidak valid."}
     except Exception as e:
-        return {"success": False, "message": f"Error CRUD jalur: {str(e)}"}
+        return {"success": False, "message": f"Terjadi kesalahan saat memproses data jalur: {str(e)}"}

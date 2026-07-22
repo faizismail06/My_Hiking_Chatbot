@@ -612,6 +612,30 @@ def get_gemini_response(
                     'code': func_result.get('code'),
                     'next_step': func_result.get('next_step'),
                 }
+
+            # Untuk semua function execution (create_booking, crud_mountain, crud_trail, export_excel, dll.),
+            # kembalikan langsung pesan konfirmasi (berhasil/gagal) dari fungsi backend ke pengguna.
+            if isinstance(func_result, dict) and func_result.get('message'):
+                res_payload = {
+                    'success': func_result.get('success', True),
+                    'message': clean_markdown(func_result['message']),
+                    'source': 'gemini_api',
+                    'intent': function_call_part.function_call.name,
+                    'type': 'text',
+                }
+                if func_result.get('order_id'):
+                    res_payload['order_id'] = func_result['order_id']
+                if func_result.get('transaction_id'):
+                    res_payload['transaction_id'] = func_result['transaction_id']
+                if func_result.get('payment_url'):
+                    res_payload['payment_url'] = func_result['payment_url']
+                if func_result.get('download_url'):
+                    res_payload['download_url'] = func_result['download_url']
+                if func_result.get('code'):
+                    res_payload['code'] = func_result['code']
+                if func_result.get('next_step'):
+                    res_payload['next_step'] = func_result['next_step']
+                return res_payload
             
             # Send function result back to Gemini
             response = chat.send_message(
@@ -628,13 +652,15 @@ def get_gemini_response(
             iteration += 1
         
         # Extract final text response safely
-        final_text = "Permintaan telah diproses."
+        last_func_msg = func_result.get('message') if ('func_result' in locals() and isinstance(func_result, dict)) else None
+        final_text = last_func_msg or "Permintaan telah diproses."
         try:
             if response.candidates and len(response.candidates) > 0:
                 candidate = response.candidates[0]
                 if candidate.content and candidate.content.parts:
-                    if any(part.text for part in candidate.content.parts):
-                        final_text = response.text
+                    text_parts = [part.text for part in candidate.content.parts if hasattr(part, 'text') and part.text]
+                    if text_parts:
+                        final_text = "\n".join(text_parts).strip()
         except (ValueError, AttributeError, IndexError):
             pass
         
@@ -646,57 +672,51 @@ def get_gemini_response(
             'message': final_text,
         }
         
-        # Dynamic mountain card matching logic (for mountains and trails/routes queries)
+        # Dynamic mountain card matching logic: HANYA dilampirkan jika user secara eksplisit menanyakan daftar gunung/jalur
         from database import fetch_mountains_data, fetch_trails_data
         try:
             mentioned_mountains = []
             user_msg_lower = user_message.lower()
-            resp_text_lower = final_text.lower()
             
-            # General keywords check for both mountains and trails/routes
-            is_general_query = any(kw in user_msg_lower for kw in [
+            # Kartu gunung HANYA dilampirkan jika user menanyakan daftar gunung/jalur dan BUKAN query status booking/tiket
+            is_status_query = any(kw in user_msg_lower for kw in ["status", "cek status", "riwayat", "tiket saya", "jadwal"])
+            is_general_card_query = any(kw in user_msg_lower for kw in [
                 "ada berapa gunung", "daftar gunung", "tampilkan gunung", "gunung apa saja", "gunung yang tersedia",
                 "ada berapa jalur", "daftar jalur", "tampilkan jalur", "jalur apa saja", "jalur yang tersedia",
                 "ada rute apa saja", "rute yang tersedia"
             ])
             
-            all_mountains = fetch_mountains_data()
-            all_trails = fetch_trails_data()
-            
-            matched_mountain_ids = set()
-            
-            # Match mountains directly by name
-            for m in all_mountains:
-                name_lower = m['nama'].lower()
-                clean_name = name_lower.replace("gunung ", "").strip()
+            if is_general_card_query and not is_status_query:
+                all_mountains = fetch_mountains_data()
+                all_trails = fetch_trails_data()
+                matched_mountain_ids = set()
                 
-                if is_general_query or name_lower in user_msg_lower or name_lower in resp_text_lower or (len(clean_name) > 3 and (clean_name in user_msg_lower or clean_name in resp_text_lower)):
-                    matched_mountain_ids.add(m['id'])
-            
-            # Match mountains indirectly by mentioned trail names
-            for t in all_trails:
-                trail_name_lower = t['nama_jalur'].lower()
-                clean_trail_name = trail_name_lower.replace("jalur ", "").strip()
+                # Match mountains directly by name
+                for m in all_mountains:
+                    name_lower = m['nama'].lower()
+                    clean_name = name_lower.replace("gunung ", "").strip()
+                    if name_lower in user_msg_lower or (len(clean_name) > 3 and clean_name in user_msg_lower):
+                        matched_mountain_ids.add(m['id'])
                 
-                if (trail_name_lower in user_msg_lower or trail_name_lower in resp_text_lower or 
-                    (len(clean_trail_name) > 3 and (clean_trail_name in user_msg_lower or clean_trail_name in resp_text_lower))):
-                    if t.get('id_gunung'):
-                        matched_mountain_ids.add(t['id_gunung'])
-            
-            # Build final metadata for matched mountains
-            for m in all_mountains:
-                if m['id'] in matched_mountain_ids:
-                    mentioned_mountains.append({
-                        'id': m['id'],
-                        'nama': m['nama'],
-                        'ketinggian': m['ketinggian'],
-                        'deskripsi': m['deskripsi'],
-                        'gambar_gunung': m.get('gambar_gunung', ''),
-                        'provinsi': m.get('provinsi', 'Jawa Tengah'),
-                    })
-            
-            if mentioned_mountains:
-                result['mountains'] = mentioned_mountains
+                # If general query with no specific mountain name, include all mountains
+                if not matched_mountain_ids:
+                    for m in all_mountains:
+                        matched_mountain_ids.add(m['id'])
+                
+                # Build final metadata for matched mountains
+                for m in all_mountains:
+                    if m['id'] in matched_mountain_ids:
+                        mentioned_mountains.append({
+                            'id': m['id'],
+                            'nama': m['nama'],
+                            'ketinggian': m['ketinggian'],
+                            'deskripsi': m['deskripsi'],
+                            'gambar_gunung': m.get('gambar_gunung', ''),
+                            'provinsi': m.get('provinsi', 'Jawa Tengah'),
+                        })
+                
+                if mentioned_mountains:
+                    result['mountains'] = mentioned_mountains
         except Exception as ex:
             print(f"Error extracting mentioned mountains: {ex}")
             
