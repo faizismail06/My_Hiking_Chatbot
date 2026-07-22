@@ -85,7 +85,7 @@ def get_tools_for_role(role):
                         type=genai.protos.Type.OBJECT,
                         properties={
                             "action": genai.protos.Schema(type=genai.protos.Type.STRING, description="Aksi: list, create, update, delete"),
-                            "data": genai.protos.Schema(type=genai.protos.Type.STRING, description="Data dalam format JSON string untuk create/update/delete. Field lokasi gunakan NAMA STRING: kabupaten (string), kecamatan (string), desa (string), provinsi (string). Field lainnya: id, nama, ketinggian, deskripsi, latitude, longitude. Contoh update lokasi: {\"id\": 1, \"kabupaten\": \"Boyolali\", \"kecamatan\": \"Selo\", \"desa\": \"Selo\"}"),
+                            "data": genai.protos.Schema(type=genai.protos.Type.STRING, description="Data dalam format JSON string untuk create/update/delete. Field lokasi gunakan NAMA STRING: provinsi (string). Field lainnya: id, nama, ketinggian, deskripsi, latitude, longitude. Contoh update lokasi: {\"id\": 1, \"provinsi\": \"Jawa Tengah\"}"),
                         },
                         required=["action"]
                     )
@@ -237,6 +237,8 @@ ATURAN FORMAT JAWABAN (SANGAT PENTING!):
 - Tulis dengan gaya bahasa yang profesional, ramah, natural, dan tidak kaku/robotik.
 - Untuk daftar/list, gunakan tanda strip (-) atau angka (1. 2. 3.)
 - Untuk tabel data, gunakan format tabel markdown yang rapi.
+- DILARANG MENAMPILKAN ID DATABASE MENTAH (seperti 'ID: 1', '(ID: 1)', 'id_gunung: 1', dll) dalam jawaban teks Anda kepada Admin, kecuali jika Admin secara eksplisit meminta ID/kode database tersebut.
+- Sebutkan nama gunung, nama jalur, nama user, atau lokasi secara bersih dan alami tanpa menambahkan suffix ID internal (Contoh BENAR: "Jalur Selo berada di Gunung Merbabu", Contoh SALAH: "Jalur Selo berada di Gunung Merbabu (ID: 1)").
 
 PANDUAN:
 1. Jawab dengan profesional, ringkas, dan jelas dalam Bahasa Indonesia.
@@ -295,6 +297,8 @@ ATURAN FORMAT JAWABAN (SANGAT PENTING!):
 - JANGAN gunakan HURUF KAPITAL (ALL CAPS) secara berlebihan untuk penekanan atau judul. Gunakan format tebal (bold) markdown sebagai gantinya.
 - Tulis dengan gaya bahasa yang sigap, profesional, ramah, dan tidak kaku/robotik.
 - Untuk daftar/list, gunakan tanda strip (-) atau angka (1. 2. 3.)
+- DILARANG MENAMPILKAN ID DATABASE MENTAH (seperti 'ID: 1', '(ID: 1)', 'id_gunung: 1', dll) dalam jawaban teks Anda kepada Penjaga, kecuali jika Penjaga secara eksplisit meminta ID/kode database tersebut.
+- Sebutkan nama gunung, nama jalur, nama user, atau lokasi secara bersih dan alami tanpa menambahkan suffix ID internal (Contoh BENAR: "Jalur Selo berada di Gunung Merbabu", Contoh SALAH: "Jalur Selo berada di Gunung Merbabu (ID: 1)").
 
 PANDUAN:
 1. Jawab dengan profesional dan sigap dalam Bahasa Indonesia.

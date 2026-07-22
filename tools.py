@@ -516,14 +516,12 @@ def tool_export_excel(data_type, role):
         elif data_type == "gunung":
             mountains = fetch_mountains_data()
             ws.title = "Data Gunung"
-            headers = ["ID", "Nama", "Ketinggian (mdpl)", "Provinsi", "Kabupaten", 
-                       "Kecamatan", "Desa", "Latitude", "Longitude"]
+            headers = ["ID", "Nama", "Ketinggian (mdpl)", "Provinsi", "Latitude", "Longitude"]
             ws.append(headers)
             for m in mountains:
                 ws.append([
                     m['id'], m['nama'], m['ketinggian'], m.get('provinsi', '-'),
-                    m.get('kabupaten', '-'), m.get('kecamatan', '-'),
-                    m.get('desa', '-'), m.get('latitude', '-'), m.get('longitude', '-')
+                    m.get('latitude', '-'), m.get('longitude', '-')
                 ])
             filename = f"rekap_data_gunung_{timestamp}.xlsx"
             

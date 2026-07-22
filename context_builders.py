@@ -46,7 +46,7 @@ def build_context_pendaki(user_id=None):
 No Gunung: {idx}
 Nama Gunung: {m['nama']}
 Ketinggian: {m['ketinggian']} mdpl
-Lokasi: {m.get('desa', '')}, {m.get('kecamatan', '')}, {m.get('kabupaten', '')}, {m.get('provinsi', '')}
+Provinsi: {m.get('provinsi', '')}
 Deskripsi: {m['deskripsi']}
 Koordinat: {m.get('latitude', '-')}, {m.get('longitude', '-')}
 ---"""
@@ -103,13 +103,13 @@ def build_context_admin():
     if mountains:
         context_parts.append("=== DATA GUNUNG ===")
         for m in mountains:
-            context_parts.append(f"ID: {m['id']} | Nama: {m['nama']} | Ketinggian: {m['ketinggian']} mdpl | Lokasi: {m.get('kabupaten', '')}, {m.get('kecamatan', '')}, {m.get('desa', '')}, {m.get('provinsi', '')}")
+            context_parts.append(f"ID: {m['id']} | Nama: {m['nama']} | Ketinggian: {m['ketinggian']} mdpl | Provinsi: {m.get('provinsi', '')}")
     
     # Trails
     if trails:
         context_parts.append("\n=== DATA JALUR PENDAKIAN ===")
         for t in trails:
-            context_parts.append(f"ID: {t['id']} | Jalur: {t['nama_jalur']} | Gunung: {t['nama_gunung']} (ID: {t['id_gunung']}) | Biaya: Rp {t['biaya']:,} | Jarak: {t['jarak']} km | Lokasi: {t.get('kabupaten', '')}, {t.get('kecamatan', '')}, {t.get('desa', '')}, {t.get('provinsi', '')}")
+            context_parts.append(f"ID Jalur: {t['id']} | Jalur: {t['nama_jalur']} | Gunung: {t['nama_gunung']} | ID Gunung: {t['id_gunung']} | Biaya: Rp {t['biaya']:,} | Jarak: {t['jarak']} km | Lokasi: {t.get('kabupaten', '')}, {t.get('kecamatan', '')}, {t.get('desa', '')}, {t.get('provinsi', '')}")
 
     
     # Orders (recent 50)

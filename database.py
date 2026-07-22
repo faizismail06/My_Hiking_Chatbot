@@ -48,13 +48,9 @@ def fetch_mountains_data():
         with conn.cursor() as cursor:
             query = """
                 SELECT m.id, m.nama, m.deskripsi, m.ketinggian, m.latitude, m.longitude, m.gambar_gunung,
-                       m.province_id, m.regency_id, m.district_id, m.village_id,
-                       p.name as provinsi, r.name as kabupaten, d.name as kecamatan, v.name as desa
+                       m.province_id, p.name as provinsi
                 FROM mountains m
                 LEFT JOIN reg_provinces p ON m.province_id = p.id
-                LEFT JOIN reg_regencies r ON m.regency_id = r.id
-                LEFT JOIN reg_districts d ON m.district_id = d.id
-                LEFT JOIN reg_villages v ON m.village_id = v.id
             """
             cursor.execute(query)
             mountains = cursor.fetchall()
