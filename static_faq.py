@@ -18,6 +18,7 @@ from database import (
     fetch_routes_by_mountain_name,
     fetch_route_detail,
     fetch_rules_by_mountain,
+    fetch_rules_data,
 )
 
 # Fallback image jika tidak ada gambar di database
@@ -58,8 +59,17 @@ def extract_route_name(normalized_text, routes):
     return None
 
 
-def _build_route_detail_response(detail):
-    """Helper merakit response kartu detail rute"""
+def format_trail_name(name):
+    if not name:
+        return ""
+    name_str = str(name).strip()
+    if name_str.lower().startswith("jalur "):
+        return name_str
+    return f"Jalur {name_str}"
+
+
+def _build_route_detail_response(detail, query_text=""):
+    """Helper merakit response kartu detail rute dengan teks yang spesifik"""
     basecamp_parts = []
     if detail.get('desa'):
         basecamp_parts.append(detail['desa'])
@@ -69,13 +79,23 @@ def _build_route_detail_response(detail):
         basecamp_parts.append(detail['kabupaten'])
     basecamp_str = ", ".join(basecamp_parts) if basecamp_parts else "Tidak tersedia"
     estimasi = f"{detail['estimasi_waktu']} jam" if detail.get('estimasi_waktu') else "Belum tersedia"
+    biaya_formatted = f"Rp {int(detail['biaya']):,}" if detail.get('biaya') else "Rp 0"
+    trail_title = format_trail_name(detail['nama_jalur'])
+
+    norm = query_text.lower()
+    if any(k in norm for k in ["biaya", "harga", "tarif", "bayar"]):
+        message_text = f"Biaya e-tiket pendakian {detail['nama_gunung']} {trail_title} adalah {biaya_formatted} per orang. Berikut detail kartu jalurnya:"
+    elif any(k in norm for k in ["jarak", "estimasi", "lama", "durasi", "waktu"]):
+        message_text = f"Jarak tempuh {detail['nama_gunung']} {trail_title} adalah {detail.get('jarak', 0)} km dengan estimasi waktu pendakian sekitar {estimasi}. Berikut detail kartu jalurnya:"
+    else:
+        message_text = f"Ini dia info lengkap jalur {detail['nama_gunung']} {trail_title}! Langsung pesan tiket kalau kamu tertarik ya."
 
     return {
         "success": True,
         "source": "static_faq",
         "intent": "route_detail",
         "type": "route_cards",
-        "message": f"Ini dia info lengkap jalur {detail['nama_gunung']} {detail['nama_jalur']}! Langsung pesan tiket kalau kamu tertarik ya.",
+        "message": message_text,
         "data": {
             "mountain_name": detail["nama_gunung"],
             "routes": [{
@@ -108,8 +128,30 @@ def get_static_response(user_message):
     """
     normalized = normalize_text(user_message)
 
-    # Bypass static FAQ untuk permintaan pemesanan tiket / booking agar diproses oleh Gemini API.
-    # Namun, jika mengandung kata pembatalan/cancel/refund, jangan di-bypass agar tetap ditangani oleh intent refund_policy.
+    # ===================================================================
+    # BYPASS KE GEMINI (Return None):
+    # Untuk pertanyaan yang butuh penalaran/perbandingan/rekomendasi spesifik/data personal user
+    # ===================================================================
+    all_mountains = fetch_mountains_data()
+    extracted_mountain = extract_mountain_name(normalized, all_mountains)
+
+    all_trails = fetch_trails_data()
+    has_specific_trail = any(re.search(rf'\b{re.escape(t["nama_jalur"].lower().replace("via","").replace("jalur","").strip())}\b', normalized) for t in all_trails if len(t["nama_jalur"].strip()) > 2)
+
+    # Bypass jika perbandingan ("paling murah", "paling singkat") ATAU rekomendasi spesifik gunung/jalur ("apakah selo cocok untuk pemula")
+    is_comparison = any(k in normalized for k in ["murah", "mahal", "singkat", "cepat", "paling", "dibandingkan", "pilihan terbaik"])
+    is_specific_recommendation = (extracted_mountain or has_specific_trail) and any(k in normalized for k in ["pemula", "cocok", "rekomendasi"])
+
+    if is_comparison or is_specific_recommendation:
+        return None
+
+    # 2. Pertanyaan status booking / jadwal personal user (dibaca dari RAG user orders)
+    if any(k in normalized for k in [
+        "jadwal", "booking saya", "pesanan saya", "status booking", "status pesanan"
+    ]):
+        return None
+
+    # 3. Bypass static FAQ untuk permintaan pemesanan tiket / booking agar diproses oleh Gemini API.
     is_refund_query = any(k in normalized for k in ["cancel", "batal", "refund", "pembatalan", "batalin", "uang kembali"])
     if not is_refund_query:
         if any(k in normalized for k in [
@@ -120,15 +162,88 @@ def get_static_response(user_message):
         ]):
             return None
 
-    all_mountains = fetch_mountains_data()
-    extracted_mountain = extract_mountain_name(normalized, all_mountains)
+    # ===================================================================
+    # 1. INTENT: mountain_detail (Ketinggian / Lokasi spesifik Gunung)
+    # ===================================================================
+    if extracted_mountain and any(k in normalized for k in ["ketinggian", "tinggi", "lokasi", "di mana", "dimana", "provinsi"]):
+        mountain_data = next((m for m in all_mountains if m['nama'].lower() == extracted_mountain.lower()), None)
+        if mountain_data:
+            if any(k in normalized for k in ["ketinggian", "tinggi"]):
+                return {
+                    "success": True,
+                    "source": "static_faq",
+                    "intent": "mountain_detail",
+                    "type": "text",
+                    "message": f"Ketinggian {mountain_data['nama']} adalah {mountain_data['ketinggian']} mdpl."
+                }
+            elif any(k in normalized for k in ["lokasi", "di mana", "dimana", "provinsi"]):
+                return {
+                    "success": True,
+                    "source": "static_faq",
+                    "intent": "mountain_detail",
+                    "type": "text",
+                    "message": f"{mountain_data['nama']} berlokasi di Provinsi {mountain_data.get('provinsi', 'Jawa Tengah')}."
+                }
 
     # ===================================================================
-    # 1. INTENT: list_mountains
+    # 2. INTENT: hiking_rules (DICEK SEBELUM ROUTE DETAIL AGAR "tata tertib jalur X" TIDAK TERTANGKAP CARD JALUR)
     # ===================================================================
-    # Jangan tangkap jika user menanyakan rekomendasi (misal: "gunung apa saja yang cocok untuk pemula")
-    is_recommendation = any(k in normalized for k in ["pemula", "rekomendasi", "cocok", "terbaik", "mudah", "sulit"])
-    if not is_recommendation and any(k in normalized for k in [
+    if any(k in normalized for k in [
+        "aturan", "tata tertib", "peraturan", "bolehkah mendaki",
+        "dilarang", "syarat mendaki", "ketentuan mendaki"
+    ]):
+        # Jika user menyebutkan nama gunung
+        if extracted_mountain:
+            rules_data = fetch_rules_by_mountain(extracted_mountain)
+            if rules_data:
+                rule_text = f"TATA TERTIB PENDAKIAN {extracted_mountain.upper()}:\n"
+                for idx, r in enumerate(rules_data, 1):
+                    t_title = format_trail_name(r['nama_jalur'])
+                    rule_text += f"{idx}. [{t_title}]: {r['tata_tertib']}\n"
+                rule_text += "\nOh iya, aturan detail lainnya bisa saja berbeda di tiap basecamp. Biar lebih pasti, jangan lupa cek tata tertib lengkap di halaman info gunung ya!"
+                return {
+                    "success": True,
+                    "source": "static_faq",
+                    "intent": "hiking_rules",
+                    "type": "text",
+                    "message": rule_text.strip()
+                }
+
+        # Jika user menyebutkan nama jalur spesifik (misal: "tata tertib jalur kaliwadas")
+        all_rules = fetch_rules_data()
+        matched_rules = []
+        for r in all_rules:
+            trail_clean = r['nama_jalur'].lower().replace("via", "").replace("jalur", "").strip()
+            if re.search(rf'\b{re.escape(trail_clean)}\b', normalized):
+                matched_rules.append(r)
+
+        if matched_rules:
+            trail_name = format_trail_name(matched_rules[0]['nama_jalur']).upper()
+            mountain_name = matched_rules[0]['nama_gunung'].upper()
+            rule_text = f"TATA TERTIB PENDAKIAN {mountain_name} ({trail_name}):\n"
+            for idx, r in enumerate(matched_rules, 1):
+                rule_text += f"{idx}. {r['tata_tertib']}\n"
+            return {
+                "success": True,
+                "source": "static_faq",
+                "intent": "hiking_rules",
+                "type": "text",
+                "message": rule_text.strip()
+            }
+
+        # Fallback aturan umum
+        return {
+            "success": True,
+            "source": "static_faq",
+            "intent": "hiking_rules",
+            "type": "text",
+            "message": "ATURAN UMUM PENDAKIAN MYHIKING:\n1. Pendaki wajib membawa kartu identitas asli (KTP/SIM/Paspor) saat check-in.\n2. Wajib registrasi online dan melakukan pembayaran e-tiket sebelum waktu pendakian.\n3. Dilarang membuang sampah sembarangan dan wajib membawa sampah kembali ke basecamp.\n4. Tidak diperkenankan merusak flora, fauna, dan situs cagar alam di sepanjang jalur pendakian.\n\nSetiap gunung juga punya aturan khusus masing-masing, lho. Biar pendakianmu berjalan lancar, yuk cek detail tata tertib lengkap tiap gunung di halaman info gunung ya!"
+        }
+
+    # ===================================================================
+    # 2. INTENT: list_mountains
+    # ===================================================================
+    if any(k in normalized for k in [
         "ada gunung apa saja", "daftar gunung", "tampilkan gunung",
         "gunung yang tersedia", "pilihan gunung", "gunung apa saja",
         "ada berapa gunung", "list gunung", "gunung tersedia"
@@ -156,7 +271,7 @@ def get_static_response(user_message):
         }
 
     # ===================================================================
-    # 2. INTENT: list_routes_by_mountain / route_detail
+    # 3. INTENT: list_routes_by_mountain / route_detail
     # ===================================================================
     is_route_query = any(k in normalized for k in [
         "jalur", "rute", "via", "estimasi", "lama pendakian",
@@ -182,7 +297,7 @@ def get_static_response(user_message):
             if extracted_route:
                 detail = fetch_route_detail(extracted_mountain, extracted_route)
                 if detail:
-                    return _build_route_detail_response(detail)
+                    return _build_route_detail_response(detail, user_message)
 
             # Jika tidak ada rute spesifik yang dicocokkan, tampilkan semua jalur gunung tersebut
             routes_list = []
@@ -239,7 +354,7 @@ def get_static_response(user_message):
             if matched_trail:
                 detail = fetch_route_detail(matched_trail['nama_gunung'], matched_trail['nama_jalur'])
                 if detail:
-                    return _build_route_detail_response(detail)
+                    return _build_route_detail_response(detail, user_message)
 
             # Jika tidak ada nama gunung maupun nama jalur spesifik, tampilkan kartu gunung untuk dipilih
             mountains_list = []
@@ -262,38 +377,6 @@ def get_static_response(user_message):
                     "mountains": mountains_list
                 }
             }
-
-    # ===================================================================
-    # 3. INTENT: hiking_rules
-    # ===================================================================
-    if any(k in normalized for k in [
-        "aturan", "tata tertib", "peraturan", "bolehkah mendaki",
-        "dilarang", "syarat mendaki", "ketentuan mendaki"
-    ]):
-        # Jika user menyebutkan nama gunung, ambil aturan khusus gunung tersebut
-        if extracted_mountain:
-            rules_data = fetch_rules_by_mountain(extracted_mountain)
-            if rules_data:
-                rule_text = f"TATA TERTIB PENDAKIAN {extracted_mountain.upper()}:\n"
-                for idx, r in enumerate(rules_data, 1):
-                    rule_text += f"{idx}. [Jalur {r['nama_jalur']}]: {r['tata_tertib']}\n"
-                rule_text += "\nOh iya, aturan detail lainnya bisa saja berbeda di tiap basecamp. Biar lebih pasti, jangan lupa cek tata tertib lengkap masing-masing gunung di halaman info gunung (Trail Screen) ya!"
-                return {
-                    "success": True,
-                    "source": "static_faq",
-                    "intent": "hiking_rules",
-                    "type": "text",
-                    "message": rule_text.strip()
-                }
-
-        # Fallback aturan umum
-        return {
-            "success": True,
-            "source": "static_faq",
-            "intent": "hiking_rules",
-            "type": "text",
-            "message": "ATURAN UMUM PENDAKIAN MYHIKING:\n1. Pendaki wajib membawa kartu identitas asli (KTP/SIM/Paspor) saat check-in.\n2. Wajib registrasi online dan melakukan pembayaran e-tiket sebelum waktu pendakian.\n3. Dilarang membuang sampah sembarangan dan wajib membawa sampah kembali ke basecamp.\n4. Tidak diperkenankan merusak flora, fauna, dan situs cagar alam di sepanjang jalur pendakian.\n\nSetiap gunung juga punya aturan khusus masing-masing, lho. Biar pendakianmu berjalan lancar, yuk cek detail tata tertib lengkap tiap gunung di halaman info gunung (Trail Screen) ya!"
-        }
 
     # ===================================================================
     # 4. INTENT: refund_policy

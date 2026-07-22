@@ -26,8 +26,8 @@ from database import (
 def build_context_pendaki(user_id=None):
     """Membangun konteks untuk chatbot pendaki.
     
-    user_id diterima untuk future-proofing tetapi saat ini
-    konteks pendaki hanya berisi data publik (gunung, jalur, rules).
+    Konteks berisi data publik (gunung, jalur, rules) serta data pesanan/tiket
+    milik user tersebut (isolated by user_id) jika user sedang login.
     """
     context_parts = []
     
@@ -37,9 +37,29 @@ def build_context_pendaki(user_id=None):
     mountains_sorted = []
     trails_sorted = []
     
+    # Build user orders context if user_id is provided
+    if user_id:
+        user_orders = fetch_orders_by_user(user_id)
+        if user_orders:
+            context_parts.append("=== DATA PESANAN & JADWAL PENDAKIAN ANDA ===")
+            for idx, o in enumerate(user_orders, start=1):
+                order_info = f"""
+Tiket #{idx} (Kode Booking: #{o['id']}):
+- Gunung: {o.get('nama_gunung', '-')}
+- Jalur: {o.get('nama_jalur', '-')}
+- Tanggal Naik: {o['tanggal_naik']}
+- Tanggal Turun: {o.get('tanggal_turun', '-')}
+- Total Biaya: Rp {o['total_harga_tiket']:,}
+- Status Tiket/Booking: {o['status']}
+---"""
+                context_parts.append(order_info)
+        else:
+            context_parts.append("=== DATA PESANAN & JADWAL PENDAKIAN ANDA ===")
+            context_parts.append("Anda belum memiliki riwayat pemesanan/tiket pendakian di aplikasi MyHiking.")
+
     # Build mountain context (user-facing: nomor urut, tanpa ID mentah)
     if mountains:
-        context_parts.append("=== DATA GUNUNG ===")
+        context_parts.append("\n=== DATA GUNUNG ===")
         mountains_sorted = sorted(mountains, key=lambda x: x.get('id', 0))
         for idx, m in enumerate(mountains_sorted, start=1):
             mountain_info = f"""
