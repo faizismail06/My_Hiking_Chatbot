@@ -20,14 +20,15 @@ from database import (
     fetch_orders_by_trail_ids,
     fetch_panics_by_trail_ids,
     fetch_orders_by_user,
+    fetch_user_profile,
 )
 
 
 def build_context_pendaki(user_id=None):
     """Membangun konteks untuk chatbot pendaki.
     
-    Konteks berisi data publik (gunung, jalur, rules) serta data pesanan/tiket
-    milik user tersebut (isolated by user_id) jika user sedang login.
+    Konteks berisi data publik (gunung, jalur, rules, DSS difficulty metrics) serta
+    data pesanan/tiket dan profil tier milik user tersebut jika user sedang login.
     """
     context_parts = []
     
@@ -37,8 +38,15 @@ def build_context_pendaki(user_id=None):
     mountains_sorted = []
     trails_sorted = []
     
-    # Build user orders context if user_id is provided
+    # Build user profile and orders context if user_id is provided
     if user_id:
+        user_profile = fetch_user_profile(user_id)
+        if user_profile and user_profile.get('tier'):
+            tier_name = str(user_profile['tier']).title()
+            context_parts.append(f"=== PROFIL DSS PENGGUNA TERHUBUNG ===")
+            context_parts.append(f"Nama: {user_profile.get('name', 'Pendaki')}")
+            context_parts.append(f"Tingkat Pengalaman (Tier Pendaki): {tier_name}\n")
+
         user_orders = fetch_orders_by_user(user_id)
         if user_orders:
             context_parts.append("=== DATA PESANAN & JADWAL PENDAKIAN ANDA ===")
@@ -72,16 +80,52 @@ Koordinat: {m.get('latitude', '-')}, {m.get('longitude', '-')}
 ---"""
             context_parts.append(mountain_info)
     
-    # Build trails context (user-facing: nomor urut, tanpa ID mentah)
+    # Build trails context (user-facing: nomor urut, tanpa ID mentah + DSS Difficulty & Suitability)
     if trails:
-        context_parts.append("\n=== DATA JALUR PENDAKIAN ===")
+        context_parts.append("\n=== DATA JALUR PENDAKIAN & KESESUAIAN DSS ===")
         trails_sorted = sorted(trails, key=lambda x: x.get('id', 0))
         for idx, t in enumerate(trails_sorted, start=1):
+            diff_raw = str(t.get('tingkat_kesulitan') or '').lower()
+            if not diff_raw or diff_raw == 'none':
+                dist = float(t.get('jarak') or 0)
+                elev = float(t.get('elevasi') or 0)
+                dur = float(t.get('durasi') or 0)
+                norm_dist = min(1.0, dist / 20.0)
+                norm_elev = min(1.0, elev / 3500.0)
+                norm_dur = min(1.0, dur / 14.0)
+                demand = (norm_elev * 0.40) + (norm_dist * 0.35) + (norm_dur * 0.25)
+                score = 1.0 + (demand * 3.0)
+                if score < 1.75:
+                    diff_label = "Mudah"
+                elif score < 2.50:
+                    diff_label = "Sedang"
+                elif score < 3.25:
+                    diff_label = "Sulit"
+                else:
+                    diff_label = "Sangat Sulit"
+            else:
+                diff_label = diff_raw.replace('_', ' ').title()
+
+            # Formulasi Kesesuaian DSS (Risk Gap & Acuan Pemula)
+            diff_lower = diff_label.lower()
+            if diff_lower == "mudah":
+                kesesuaian_dss = "Sangat cocok & aman untuk pendaki Pemula, Menengah, dan Mahir (Risk Gap = 0)."
+            elif diff_lower == "sedang":
+                kesesuaian_dss = "Cukup cocok untuk pendaki Pemula yang memiliki fisik sehat/prima (Risk Gap = +1), serta sangat cocok untuk pendaki Menengah & Mahir."
+            elif diff_lower in ["sulit", "sangat sulit"]:
+                kesesuaian_dss = "Kurang cocok / Berisiko Tinggi untuk Pemula (Risk Gap >= +2). Disarankan untuk pendaki Menengah/Mahir atau didampingi pendaki berpengalaman."
+            else:
+                kesesuaian_dss = "Dapat dicoba oleh pendaki dengan fisik dan persiapan yang memadai."
+
             trail_info = f"""
 No Jalur: {idx}
 Nama Jalur: {t['nama_jalur']}
 Gunung: {t['nama_gunung']} ({t.get('ketinggian', '-')} mdpl)
 Jarak: {t['jarak']} km
+Elevasi: {t.get('elevasi', '-')} m
+Durasi Estimasi: ~{t.get('durasi', '-')} Jam
+Tingkat Kesulitan DSS: {diff_label}
+Kesesuaian Pendaki Pemula & Rekomendasi DSS: {kesesuaian_dss}
 Biaya: Rp {t['biaya']:,}
 Lokasi Basecamp: {t.get('desa', '')}, {t.get('kecamatan', '')}, {t.get('kabupaten', '')}, {t.get('provinsi', '')}
 Deskripsi: {t.get('deskripsi', '-')}
@@ -106,6 +150,7 @@ Tata Tertib: {r['tata_tertib']}
             context_parts.append(rule_info)
     
     return "\n".join(context_parts)
+
 
 
 def build_context_admin():

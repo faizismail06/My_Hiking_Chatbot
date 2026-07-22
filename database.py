@@ -69,6 +69,7 @@ def fetch_trails_data():
             query = """
                 SELECT r.id, r.nama as nama_jalur, r.jarak, r.deskripsi, r.biaya, r.latitude, r.longitude,
                        r.province_id, r.regency_id, r.district_id, r.village_id,
+                       r.tingkat_kesulitan, r.elevasi, r.durasi,
                        m.nama as nama_gunung, m.id as id_gunung, m.ketinggian,
                        p.name as provinsi, rg.name as kabupaten, d.name as kecamatan, v.name as desa
                 FROM routes r
@@ -392,7 +393,7 @@ def auto_expire_stale_orders():
                 LEFT JOIN transactions t ON t.id_pesanan = o.id
                 SET o.status = 'Expired',
                     t.payment_status = 'expired',
-                    t.status_pesanan = 'Kedaluwarsa'
+                    t.status_pesanan = 'Expired'
                 WHERE o.status IN ('Waiting Payment', 'pending', 'Booking', 'Menunggu Pembayaran')
                   AND (t.status_pesanan IS NULL OR t.status_pesanan != 'Complete')
                   AND TIMESTAMPDIFF(MINUTE, o.created_at, NOW()) >= 15
@@ -431,3 +432,21 @@ def fetch_orders_by_user(user_id):
     except Exception as e:
         print(f"Error fetching orders for user {user_id}: {e}")
         return []
+
+
+def fetch_user_profile(user_id):
+    """Mengambil data profil dan tier pengguna dari database"""
+    if not user_id:
+        return None
+    try:
+        conn = get_db_connection()
+        with conn.cursor() as cursor:
+            query = "SELECT id, name, email, level, tier FROM users WHERE id = %s"
+            cursor.execute(query, (int(user_id),))
+            user = cursor.fetchone()
+        conn.close()
+        return user
+    except Exception as e:
+        print(f"Error fetching profile for user {user_id}: {e}")
+        return None
+

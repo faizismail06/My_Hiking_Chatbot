@@ -466,9 +466,14 @@ def get_static_response(user_message):
         }
 
     # ===================================================================
-    # 7. INTENT: beginner_tips
+    # 7. INTENT: beginner_tips (Tips umum pendaki pemula)
     # ===================================================================
-    if any(k in normalized for k in [
+    # Pengecualian: Jangan pemicu tips generik jika user menanyakan kesesuaian jalur/gunung spesifik
+    is_suitability_or_specific_trail = any(k in normalized for k in [
+        "cocok", "sesuai", "kesulitan", "rekomendasi", "aman", "risiko", "berisiko", "tingkat"
+    ]) or (extracted_mountain is not None)
+    
+    if not is_suitability_or_specific_trail and any(k in normalized for k in [
         "pemula", "tips", "bawa apa saja", "perlengkapan",
         "logistik", "persiapan", "tips mendaki",
         "barang bawaan", "pendaki pemula"
