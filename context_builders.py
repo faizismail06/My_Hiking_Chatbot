@@ -41,11 +41,13 @@ def build_context_pendaki(user_id=None):
     # Build user profile and orders context if user_id is provided
     if user_id:
         user_profile = fetch_user_profile(user_id)
-        if user_profile and user_profile.get('tier'):
-            tier_name = str(user_profile['tier']).title()
-            context_parts.append(f"=== PROFIL DSS PENGGUNA TERHUBUNG ===")
-            context_parts.append(f"Nama: {user_profile.get('name', 'Pendaki')}")
-            context_parts.append(f"Tingkat Pengalaman (Tier Pendaki): {tier_name}\n")
+        if user_profile:
+            raw_tier = user_profile.get('tier')
+            tier_name = str(raw_tier).title() if raw_tier else "Pemula"
+            context_parts.append("=== PROFIL DSS PENGGUNA TERHUBUNG (AKUN ANDA) ===")
+            context_parts.append(f"Nama Pengguna: {user_profile.get('name', 'Pendaki')}")
+            context_parts.append(f"Tingkat Pengalaman (Tier Pendaki Anda): {tier_name}")
+            context_parts.append("Instruksi AI: Gunakan Tier Pendaki Anda di atas untuk menghitung Risk Gap dan memberikan rekomendasi personal saat user bertanya 'apakah cocok untuk SAYA'.\n")
 
         user_orders = fetch_orders_by_user(user_id)
         if user_orders:

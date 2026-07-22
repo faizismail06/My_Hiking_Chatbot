@@ -181,12 +181,16 @@ PANDUAN:
 5. Fokus pada informasi umum: nama gunung, ketinggian, jalur, biaya, tata tertib, lokasi
 6. Berikan tips pendakian yang bermanfaat jika relevan
 7. Jika ada pertanyaan di luar topik pendakian, tetap jawab dengan sopan tapi ingatkan bahwa kamu adalah asisten pendakian
-8. PERTANYAAN KESESUAIAN JALUR & DSS (PEMULA / MENENGAH / MAHIR):
-   - Kamu MEMILIKI AKSES LENGKAP ke metrik tingkat kesulitan jalur (Mudah/Sedang/Sulit), jarak, elevasi, durasi, dan rekomendasi kesesuaian DSS pada bagian DATA JALUR PENDAKIAN & KESESUAIAN DSS.
-   - Jika pengguna bertanya apakah suatu jalur cocok untuk pemula (contoh: "Apakah jalur Selo cocok untuk pemula?"):
-     1. Ambil data tingkat kesulitan DSS, jarak, elevasi, durasi, dan deskripsi jalur tersebut dari konteks RAG.
-     2. Jawab secara informatif, ramah, dan presisi dengan menjelaskan metrik jalur (jarak, elevasi, durasi, tingkat kesulitan) dan tingkat kesesuaian untuk pendaki pemula berdasarkan rekomendasi DSS.
-     3. DILARANG SEKERAS-KERASNYA menjawab "Maaf saya tidak memiliki informasi spesifik apakah jalur X cocok untuk pemula" karena data metrik tingkat kesulitan DSS tersedia lengkap di konteks.
+8. PERTANYAAN KESESUAIAN JALUR & REKOMENDASI DSS (PERSONAL & PEMULA/MENENGAH/MAHIR):
+   - Kamu MEMILIKI AKSES LENGKAP ke profil Tier pengguna (misal: Pemula/Menengah/Mahir) pada bagian PROFIL DSS PENGGUNA TERHUBUNG dan metrik tingkat kesulitan jalur (Mudah/Sedang/Sulit) pada bagian DATA JALUR PENDAKIAN & KESESUAIAN DSS.
+   - Jika pengguna bertanya tentang kesesuaian jalur UNTUK DIRI MEREKA ("apakah cocok untuk saya?", "apakah aman untuk saya?", "bagaimana untuk tingkat saya?"):
+     1. Cek bagian PROFIL DSS PENGGUNA TERHUBUNG untuk melihat Tier Pendaki pengguna (misal: Pemula / Menengah / Mahir).
+     2. Hitung & Jelaskan Risk Gap dan Rekomendasi DSS personal secara transparan:
+        - Jika Tier pengguna = Pemula (Tier 1) dan Jalur = Sedang (Level 2) -> Risk Gap = +1: Sebutkan bahwa jalur ini CUKUP COCOK untuk Anda (Risk Gap = +1) jika fisik dalam kondisi prima.
+        - Jika Tier pengguna = Pemula (Tier 1) dan Jalur = Mudah (Level 1) -> Risk Gap = 0: Sebutkan bahwa jalur ini SANGAT COCOK & AMAN untuk Anda (Risk Gap = 0).
+        - Jika Tier pengguna = Pemula (Tier 1) dan Jalur = Sulit (Level 3/4) -> Risk Gap >= +2: Sebutkan bahwa jalur ini BERISIKO TINGGI / KURANG COCOK untuk Anda (Risk Gap >= +2) dan sarankan jalur alternatif.
+     3. Sebutkan metrik nyata jalur (Jarak km, Elevasi m, Durasi jam, Tingkat Kesulitan).
+     4. DILARANG SEKERAS-KERASNYA MENJAWAB "Saya tidak memiliki informasi pribadi Anda..." atau "Saya tidak tahu tingkat pengalaman Anda..." karena data Tier pengguna TERSEDIA LENGKAP di konteks RAG.
 
 FITUR PEMESANAN TIKET:
 - Kamu bisa membantu pengguna memesan tiket pendakian melalui percakapan
@@ -522,51 +526,71 @@ def get_gemini_response(
     
     # Get tools for role
     tools = get_tools_for_role(role)
-    
-    try:
-        # Initialize model with tools
-        model = genai.GenerativeModel(
-            'gemini-2.5-flash',
-            tools=tools,
-            system_instruction=system_prompt,
-        )
+
+    # List kandidat model yang tersedia di Google Generative AI SDK (dikunjungi berurutan sebagai fallback)
+    candidate_models = [
+        'gemini-2.5-flash',
+        'gemini-1.5-flash-latest',
+        'gemini-2.0-flash',
+        'gemini-1.5-pro-latest',
+        'gemini-pro',
+    ]
+
+    # Build chat history
+    chat_messages = []
+    if conversation_history:
+        current_role = None
+        current_parts = []
         
-        # Build chat history
-        chat_messages = []
-        if conversation_history:
-            current_role = None
-            current_parts = []
+        for msg in conversation_history:
+            msg_role = "user" if msg.get('isUser', True) else "model"
+            msg_text = msg.get('message', '').strip()
+            if not msg_text:
+                continue
             
-            for msg in conversation_history:
-                msg_role = "user" if msg.get('isUser', True) else "model"
-                msg_text = msg.get('message', '').strip()
-                if not msg_text:
-                    continue
-                
-                if current_role is None:
-                    current_role = msg_role
-                    current_parts = [msg_text]
-                elif msg_role == current_role:
-                    current_parts.append(msg_text)
-                else:
-                    chat_messages.append({
-                        "role": current_role,
-                        "parts": ["\n\n".join(current_parts)]
-                    })
-                    current_role = msg_role
-                    current_parts = [msg_text]
-            
-            if current_role is not None and current_parts:
+            if current_role is None:
+                current_role = msg_role
+                current_parts = [msg_text]
+            elif msg_role == current_role:
+                current_parts.append(msg_text)
+            else:
                 chat_messages.append({
                     "role": current_role,
                     "parts": ["\n\n".join(current_parts)]
                 })
+                current_role = msg_role
+                current_parts = [msg_text]
         
-        # Start chat
-        chat = model.start_chat(history=chat_messages)
+        if current_role is not None and current_parts:
+            chat_messages.append({
+                "role": current_role,
+                "parts": ["\n\n".join(current_parts)]
+            })
+
+    try:
+        response = None
+        last_error = None
         
-        # Send message
-        response = chat.send_message(user_message)
+        for model_name in candidate_models:
+            try:
+                model = genai.GenerativeModel(
+                    model_name,
+                    tools=tools,
+                    system_instruction=system_prompt,
+                )
+                chat = model.start_chat(history=chat_messages)
+                response = chat.send_message(user_message)
+                if response:
+                    print(f"[LOG] Gemini Model berhasil digunakan: '{model_name}'")
+                    break
+            except Exception as e:
+                print(f"[Warning] Gagal memanggil model '{model_name}': {e}. Mencoba kandidat berikutnya...")
+                last_error = e
+        
+        if not response:
+            if last_error:
+                raise last_error
+            raise RuntimeError("Tidak ada model Gemini yang memberikan respon valid.")
         
         # Check for function calls
         download_url = None
