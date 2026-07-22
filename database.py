@@ -111,6 +111,7 @@ def fetch_rules_data():
 def fetch_orders_data():
     """Mengambil data pesanan dari database"""
     try:
+        auto_expire_stale_orders()
         conn = get_db_connection()
         with conn.cursor() as cursor:
             query = """
@@ -381,11 +382,33 @@ def fetch_rules_by_mountain(mountain_name):
         return []
 
 
+def auto_expire_stale_orders():
+    """Mengubah status pesanan yang belum dibayar dan sudah berusia >= 15 menit menjadi Expired"""
+    try:
+        conn = get_db_connection()
+        with conn.cursor() as cursor:
+            cursor.execute("""
+                UPDATE orders o
+                LEFT JOIN transactions t ON t.id_pesanan = o.id
+                SET o.status = 'Expired',
+                    t.payment_status = 'expired',
+                    t.status_pesanan = 'Kedaluwarsa'
+                WHERE o.status IN ('Waiting Payment', 'pending', 'Booking', 'Menunggu Pembayaran')
+                  AND (t.status_pesanan IS NULL OR t.status_pesanan != 'Complete')
+                  AND TIMESTAMPDIFF(MINUTE, o.created_at, NOW()) >= 15
+            """)
+            conn.commit()
+        conn.close()
+    except Exception as e:
+        print(f"Error auto-expiring stale orders: {e}")
+
+
 def fetch_orders_by_user(user_id):
     """Mengambil data pesanan milik pendaki tertentu"""
     if not user_id:
         return []
     try:
+        auto_expire_stale_orders()
         conn = get_db_connection()
         with conn.cursor() as cursor:
             query = """

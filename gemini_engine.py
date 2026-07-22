@@ -222,6 +222,22 @@ ANGGOTA TERPILIH DARI APLIKASI:
 - Tetap tampilkan konfirmasi nama anggota ke user sebelum final booking.
 - Jika user belum menyebut jumlah anggota tambahan, gunakan jumlah terdeteksi dari aplikasi sebagai acuan.
 
+PEMERIKSAAN STATUS BOOKING & TIKET USER:
+- Kamu MEMILIKI AKSES dan DAPAT MEMERIKSA status booking/tiket pengguna dari bagian "DATA PESANAN & JADWAL PENDAKIAN ANDA" di konteks data.
+- ATURAN FILTERING TIKET:
+  1. Jika pengguna bertanya tentang tiket/booking secara UMUM (contoh: "bagaimana status booking saya?", "tiket saya", "jadwal pendakian saya"):
+     - HANYA TAMPILKAN tiket/pesanan yang berstatus AKTIF, yaitu:
+       a. Tiket yang belum selesai dibayar ('Waiting Payment' atau 'pending')
+       b. Tiket yang berstatus 'Booking'
+       c. Tiket yang berstatus 'Sedang Mendaki'
+     - JANGAN TAMPILKAN tiket yang sudah 'Selesai', 'Expired', atau 'Cancelled' pada pertanyaan umum.
+     - Jika pengguna tidak memiliki tiket aktif (semua tiket sudah Selesai/Expired/Cancelled), sampaikan dengan ramah bahwa pengguna saat ini tidak memiliki tiket pendakian yang sedang aktif.
+  2. KECUALI JIKA PERTANYAAN PENGGUNA BERSIFAT SPESIFIK:
+     - Jika pengguna bertanya spesifik tentang expired/kedaluwarsa (misal: "apakah ada tiket expired?"): tampilkan tiket yang berstatus 'Expired'.
+     - Jika pengguna bertanya spesifik tentang riwayat selesai (misal: "lihat tiket yang sudah selesai"): tampilkan tiket yang berstatus 'Selesai'.
+     - Jika pengguna bertanya spesifik tentang pembatalan (misal: "apakah ada tiket dibatalkan?"): tampilkan tiket yang berstatus 'Cancelled'.
+- DILARANG MENJAWAB "Maaf saya tidak bisa memeriksa status booking Anda" karena kamu memiliki data pesanan pengguna di konteks.
+
 DATA YANG TERSEDIA:
 {context}
 
@@ -700,22 +716,19 @@ def get_gemini_response(
             result['transaction_id'] = get_gemini_response._last_transaction_id
             get_gemini_response._last_transaction_id = None
         
-        # Override to display route cards during booking flows
+        # Override to display route cards ONLY during booking creation flows (not for status booking or general chat)
         try:
             is_booking = False
-            primary_keywords = ["pesan tiket", "pesan tiker", "booking", "book tiket", "beli tiket", "order tiket", "pesan tempat", "pesan kuota", "create_booking"]
-            step_keywords = ["detail pesanan", "ringkasan pesanan", "total biaya", "biaya per orang", "jumlah pendaki", "tektok atau ngecamp", "tanggal pendakian", "tanggal naik", "tanggal turun", "apakah detail", "apakah ringkasan", "proses pemesanan", "proses booking"]
+            is_status_query = any(kw in user_message.lower() for kw in ["status", "cek status", "riwayat", "tiket saya", "jadwal"])
             
-            if any(kw in user_message.lower() for kw in primary_keywords + step_keywords):
-                is_booking = True
-            elif any(kw in final_text.lower() for kw in primary_keywords + step_keywords):
-                is_booking = True
-            elif conversation_history:
-                for msg in reversed(conversation_history[-10:]):
-                    msg_text = msg.get('message', '')
-                    if msg_text and any(kw in msg_text.lower() for kw in primary_keywords):
-                        is_booking = True
-                        break
+            if not is_status_query:
+                primary_keywords = ["pesan tiket", "pesan tiker", "book tiket", "beli tiket", "order tiket", "pesan tempat", "pesan kuota", "create_booking"]
+                step_keywords = ["detail pesanan", "ringkasan pesanan", "total biaya", "biaya per orang", "jumlah pendaki", "tektok atau ngecamp", "tanggal pendakian", "tanggal naik", "tanggal turun", "apakah detail", "apakah ringkasan", "proses pemesanan"]
+                
+                if any(kw in user_message.lower() for kw in primary_keywords + step_keywords):
+                    is_booking = True
+                elif any(kw in final_text.lower() for kw in primary_keywords + step_keywords):
+                    is_booking = True
 
             if is_booking and role == 'pendaki':
                 from static_faq import normalize_text, extract_mountain_name, extract_route_name
