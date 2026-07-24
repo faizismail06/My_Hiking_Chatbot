@@ -460,8 +460,15 @@ def tool_export_excel(data_type, role):
                     t.get('payment_type', '-'), str(t.get('waktu_pembayaran', '-')),
                     str(t['created_at'])
                 ])
-                if t['status_pesanan'] in ('paid', 'confirmed', 'success', 'completed'):
-                    total_pendapatan += t['total_bayar']
+                status_clean = str(t.get('status_pesanan', '')).strip().lower()
+                if status_clean in ('complete', 'completed', 'paid', 'confirmed', 'success', 'settlement'):
+                    try:
+                        total_pendapatan += float(t.get('total_bayar', 0) or 0)
+                    except (ValueError, TypeError):
+                        pass
+            
+            if isinstance(total_pendapatan, float) and total_pendapatan.is_integer():
+                total_pendapatan = int(total_pendapatan)
             
             # Add total row
             ws.append([])
