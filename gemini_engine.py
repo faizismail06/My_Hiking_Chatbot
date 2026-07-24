@@ -459,7 +459,7 @@ def process_function_call(
                 'message': 'Ekspor Excel dibatalkan karena permintaan unduhan belum jelas.',
             }
 
-        result = tool_export_excel(args.get('data_type', ''), role)
+        result = tool_export_excel(args.get('data_type', ''), role, user_id=user_id)
         if result.get('success') and result.get('filename'):
             result['download_url'] = f"/api/chat/export/{result['filename']}"
         return result

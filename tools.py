@@ -18,6 +18,10 @@ from database import (
     fetch_orders_data,
     fetch_transactions_data,
     fetch_users_data,
+    fetch_trails_by_guard,
+    fetch_orders_by_trail_ids,
+    fetch_panics_by_trail_ids,
+    fetch_transactions_by_trail_ids,
 )
 
 
@@ -406,7 +410,7 @@ def tool_get_sar_dashboard():
     return result
 
 
-def tool_export_excel(data_type, role):
+def tool_export_excel(data_type, role, user_id=None):
     """Generate file Excel berdasarkan tipe data yang diminta"""
     try:
         from openpyxl import Workbook
@@ -429,8 +433,16 @@ def tool_export_excel(data_type, role):
         filename = ""
         timestamp = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
         
+        guard_trail_ids = None
+        if role == 'penjaga' and user_id:
+            guard_trails = fetch_trails_by_guard(user_id)
+            guard_trail_ids = [t['id'] for t in guard_trails] if guard_trails else []
+
         if data_type == "sar_dashboard":
-            panics = fetch_panic_data()
+            if role == 'penjaga' and user_id:
+                panics = fetch_panics_by_trail_ids(guard_trail_ids)
+            else:
+                panics = fetch_panic_data()
             ws.title = "SAR Dashboard"
             headers = ["ID", "Nama User", "Telepon", "Telepon Darurat", "Gunung", "Jalur", 
                        "Tipe Darurat", "Deskripsi", "Latitude", "Longitude", "Status", "Waktu"]
@@ -446,7 +458,10 @@ def tool_export_excel(data_type, role):
             filename = f"rekap_sar_dashboard_{timestamp}.xlsx"
             
         elif data_type == "laporan_pendapatan":
-            transactions = fetch_transactions_data()
+            if role == 'penjaga' and user_id:
+                transactions = fetch_transactions_by_trail_ids(guard_trail_ids)
+            else:
+                transactions = fetch_transactions_data()
             ws.title = "Laporan Pendapatan"
             headers = ["ID Transaksi", "ID Pesanan", "Nama User", "Gunung", "Jalur",
                        "Total Bayar", "Status", "Tipe Pembayaran", "Waktu Pembayaran", "Dibuat"]
@@ -476,7 +491,10 @@ def tool_export_excel(data_type, role):
             filename = f"rekap_laporan_pendapatan_{timestamp}.xlsx"
             
         elif data_type == "pesanan":
-            orders = fetch_orders_data()
+            if role == 'penjaga' and user_id:
+                orders = fetch_orders_by_trail_ids(guard_trail_ids)
+            else:
+                orders = fetch_orders_data()
             ws.title = "Data Pesanan"
             headers = ["ID", "Nama User", "Email", "Gunung", "Jalur",
                        "Tanggal Naik", "Tanggal Turun", "Total Harga", "Status", "Dibuat"]
@@ -491,7 +509,10 @@ def tool_export_excel(data_type, role):
             filename = f"rekap_pesanan_{timestamp}.xlsx"
             
         elif data_type == "transaksi":
-            transactions = fetch_transactions_data()
+            if role == 'penjaga' and user_id:
+                transactions = fetch_transactions_by_trail_ids(guard_trail_ids)
+            else:
+                transactions = fetch_transactions_data()
             ws.title = "Data Transaksi"
             headers = ["ID", "ID Pesanan", "Nama User", "Gunung", "Jalur",
                        "Total Bayar", "Status", "Tipe Pembayaran", "Waktu Pembayaran"]

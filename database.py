@@ -308,6 +308,38 @@ def fetch_panics_by_trail_ids(trail_ids):
         return []
 
 
+def fetch_transactions_by_trail_ids(trail_ids):
+    """Mengambil data transaksi berdasarkan daftar ID jalur yang dikelola"""
+    if not trail_ids:
+        return []
+    try:
+        conn = get_db_connection()
+        with conn.cursor() as cursor:
+            placeholders = ', '.join(['%s'] * len(trail_ids))
+            query = f"""
+                SELECT t.id, t.id_pesanan, t.total_bayar, t.status_pesanan,
+                       t.waktu_pembayaran, t.bukti, t.payment_type,
+                       t.created_at, t.updated_at,
+                       o.id_gunung, o.id_jalur, o.id_user, o.tanggal_naik,
+                       m.nama as nama_gunung, r.nama as nama_jalur,
+                       u.name as nama_user
+                FROM transactions t
+                LEFT JOIN orders o ON t.id_pesanan = o.id
+                LEFT JOIN mountains m ON o.id_gunung = m.id
+                LEFT JOIN routes r ON o.id_jalur = r.id
+                LEFT JOIN users u ON o.id_user = u.id
+                WHERE o.id_jalur IN ({placeholders})
+                ORDER BY t.created_at DESC
+            """
+            cursor.execute(query, tuple(int(tid) for tid in trail_ids))
+            transactions = cursor.fetchall()
+        conn.close()
+        return transactions
+    except Exception as e:
+        print(f"Error fetching transactions by trail_ids {trail_ids}: {e}")
+        return []
+
+
 def fetch_routes_by_mountain_name(mountain_name):
     """Mengambil semua jalur (routes) berdasarkan nama gunung (untuk Static FAQ)"""
     try:
