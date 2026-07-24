@@ -468,15 +468,15 @@ def tool_export_excel(data_type, role, user_id=None):
             ws.append(headers)
             total_pendapatan = 0
             for t in transactions:
-                ws.append([
-                    t['id'], t['id_pesanan'], t.get('nama_user', '-'),
-                    t.get('nama_gunung', '-'), t.get('nama_jalur', '-'),
-                    t['total_bayar'], t['status_pesanan'],
-                    t.get('payment_type', '-'), str(t.get('waktu_pembayaran', '-')),
-                    str(t['created_at'])
-                ])
                 status_clean = str(t.get('status_pesanan', '')).strip().lower()
                 if status_clean in ('complete', 'completed', 'paid', 'confirmed', 'success', 'settlement'):
+                    ws.append([
+                        t['id'], t['id_pesanan'], t.get('nama_user', '-'),
+                        t.get('nama_gunung', '-'), t.get('nama_jalur', '-'),
+                        t['total_bayar'], t['status_pesanan'],
+                        t.get('payment_type', '-'), str(t.get('waktu_pembayaran', '-')),
+                        str(t['created_at'])
+                    ])
                     try:
                         total_pendapatan += float(t.get('total_bayar', 0) or 0)
                     except (ValueError, TypeError):
